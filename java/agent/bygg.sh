@@ -4,6 +4,8 @@
 #
 #   ./bygg.sh            bygg agenten og kjør alle prøvene
 #   UT=<mappe> ./bygg.sh bygg et annet sted (standard: ut/)
+#   SPILLETS_MAPPE=<mappe> ./bygg.sh   også porten: agenten mot spillets egen jar (mappen med projectzomboid.jar,
+#                                      i den dedikerte serveren `java/`). Trenger samme Java som spillet (25).
 #
 # Trenger JDK 21 eller nyere (javac, jar, java), curl og sha256sum – alt finnes i Git Bash på Windows med en JDK.
 set -euo pipefail
@@ -87,6 +89,10 @@ lag_jar() { # innhold-mappe, jar-fil
 lag_jar "$UT/innhold" "$UT/knoxlife-agent.jar"
 echo "knoxlife-agent.jar  $(sha "$UT/knoxlife-agent.jar")  $(wc -c < "$UT/knoxlife-agent.jar") bytes"
 
+mkdir -p "$UT/porten"
+javac --release "$RELEASE" -encoding UTF-8 -nowarn -proc:none -cp "$UT/klasser" -d "$UT/porten" \
+  porten/knoxlife/porten/Porten.java
+
 echo "== prøven ende til ende: et etterlignet spill med en prøve-mod"
 mkdir -p "$UT/e2e/spill" "$UT/e2e/mixin" "$UT/e2e/innhold"
 javac --release "$RELEASE" -encoding UTF-8 -nowarn -proc:none -d "$UT/e2e/spill" prover/spill/prove/Spillet.java
@@ -117,5 +123,26 @@ med_juks="$(java -XX:+EnableDynamicAgentLoading -javaagent:"$UT/e2e/knoxlife-age
   -cp "$UT/e2e/projectzomboid.jar$SEP$UT/e2e/mixin" prove.Spillet)"
 [[ "$med_juks" == *"dynamic agents allowed"* && "$med_juks" == *"classes in folder mixin"* ]] \
   || { echo "juksesperren så ikke juksen: $med_juks" >&2; exit 1; }
+
+echo "== porten stopper når spillet har endret seg"
+mkdir -p "$UT/e2e/endret"
+javac --release "$RELEASE" -encoding UTF-8 -nowarn -d "$UT/e2e/endret" prover/spill-endret/prove/Spillet.java
+(cd "$UT/e2e/endret" && jar --create --file ../endret.jar --date="$DATO" .)
+if java -XX:-EnableDynamicAgentLoading -javaagent:"$UT/e2e/knoxlife-agent.jar" \
+    -cp "$UT/e2e/endret.jar$SEP$UT/porten" knoxlife.porten.Porten "$UT/e2e/endret.jar" > "$UT/e2e/porten.txt" 2>&1; then
+  echo "porten slapp gjennom et spill der prøve-moden ikke traff" >&2
+  cat "$UT/e2e/porten.txt" >&2
+  exit 1
+fi
+grep -q "could not find any targets matching 'hilsen'" "$UT/e2e/porten.txt" \
+  || { echo "porten stoppet, men av feil grunn:" >&2; cat "$UT/e2e/porten.txt" >&2; exit 1; }
+echo "   stoppet som den skal: prøve-moden fant ikke metoden «hilsen»"
+
+if [[ -n "${SPILLETS_MAPPE:-}" ]]; then
+  echo "== porten: agenten mot spillets egen jar ($SPILLETS_MAPPE)"
+  SPILL_CP="$(find "$SPILLETS_MAPPE" -maxdepth 1 -name '*.jar' | LC_ALL=C sort | tr '\n' "$SEP")"
+  java -XX:-EnableDynamicAgentLoading -javaagent:"$UT/knoxlife-agent.jar" -Dknoxlife.bygg="$BYGG" \
+    -cp "$SPILL_CP$UT/porten" knoxlife.porten.Porten "$SPILLETS_MAPPE/projectzomboid.jar"
+fi
 
 echo "== ferdig: $UT/knoxlife-agent.jar"
