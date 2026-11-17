@@ -27,6 +27,9 @@ use std::path::{Path, PathBuf};
 pub const AGENT_FIL: &str = "knoxlife-agent.jar";
 /// Systemverdiene våre begynner med dette.
 pub const VERDI_FORAN: &str = "-Dknoxlife.";
+/// Stenger for agenter som kobler seg på etter at spillet har startet – et juksverktøy kan ellers gjøre det
+/// underveis. Juksesperren i agenten melder fra hvis valget mangler.
+pub const UTEN_DYNAMISKE_AGENTER: &str = "-XX:-EnableDynamicAgentLoading";
 const AGENT_FLAGG: &str = "-javaagent:";
 const MERKE_FIL: &str = "lagt-inn.json";
 const KOPI_MAPPE: &str = "kopi";
@@ -92,7 +95,9 @@ fn skriv_merke(tilstand: &Path, merke: &Merke) -> Resultat<()> {
 
 /// Er dette en linje vi har lagt inn?
 pub fn er_vår(valg: &str) -> bool {
-    (valg.starts_with(AGENT_FLAGG) && valg.trim_end_matches(['"', '\'']).ends_with(AGENT_FIL)) || valg.starts_with(VERDI_FORAN)
+    (valg.starts_with(AGENT_FLAGG) && valg.trim_end_matches(['"', '\'']).ends_with(AGENT_FIL))
+        || valg.starts_with(VERDI_FORAN)
+        || valg == UTEN_DYNAMISKE_AGENTER
 }
 
 fn våre_valg(p: &Patch) -> Vec<String> {
@@ -100,6 +105,7 @@ fn våre_valg(p: &Patch) -> Vec<String> {
         format!("{AGENT_FLAGG}{}", jvm_sti(p.agent)),
         format!("{VERDI_FORAN}bygg={}", p.bygg),
         format!("{VERDI_FORAN}stempel={}", jvm_sti(p.stempel)),
+        UTEN_DYNAMISKE_AGENTER.to_string(),
     ]
 }
 
@@ -418,7 +424,8 @@ mod prøver {
             assert!(args[0].starts_with("-javaagent:") && args[0].ends_with(AGENT_FIL), "{args:?}");
             assert_eq!(args[1], "-Dknoxlife.bygg=12");
             assert!(args[2].starts_with("-Dknoxlife.stempel="));
-            assert_eq!(&args[3..], ["-Djava.awt.headless=true", "-Xmx3072m", "-XX:+UseZGC"]);
+            assert_eq!(args[3], UTEN_DYNAMISKE_AGENTER);
+            assert_eq!(&args[4..], ["-Djava.awt.headless=true", "-Xmx3072m", "-XX:+UseZGC"]);
             assert!(!args[0].contains('\\'), "Java får skråstrek fremover");
             assert!(er_lagt_inn(&o.spill, &o.tilstand).unwrap());
             // Rekkefølgen på nøklene er den samme som Steam skrev.
@@ -440,7 +447,7 @@ mod prøver {
         assert_eq!(fs::read(&i_pakken).unwrap(), b"agenten");
         let valg = jvm_options(&o.fil());
         assert_eq!(valg[0], format!("-javaagent:{}", jvm_sti(&i_pakken)));
-        assert_eq!(&valg[3..], ["-Xmx3072m", "-XstartOnFirstThread"]);
+        assert_eq!(&valg[4..], ["-Xmx3072m", "-XstartOnFirstThread"]);
 
         sett_tilbake(&o.spill, &o.tilstand).unwrap();
         assert_eq!(o.fil(), PLIST.as_bytes());
@@ -455,7 +462,7 @@ mod prøver {
         // Launcheren dør her. Neste start legger inn på nytt – uten at resten blir «originalen».
         legg_inn(&o.spill, &o.tilstand, &Patch { bygg: 13, ..o.patch() }).unwrap();
         let args = vm_args(&o.fil());
-        assert_eq!(args.iter().filter(|a| er_vår(a)).count(), 3);
+        assert_eq!(args.iter().filter(|a| er_vår(a)).count(), 4);
         assert_eq!(args[1], "-Dknoxlife.bygg=13");
         sett_tilbake(&o.spill, &o.tilstand).unwrap();
         assert_eq!(o.fil(), JSON.as_bytes());
@@ -537,6 +544,8 @@ mod prøver {
     fn andres_agenter_er_ikke_våre() {
         assert!(er_vår("-javaagent:C:/x/knoxlife-agent.jar"));
         assert!(er_vår("-Dknoxlife.bygg=3"));
+        assert!(er_vår("-XX:-EnableDynamicAgentLoading"));
+        assert!(!er_vår("-XX:+EnableDynamicAgentLoading"));
         assert!(!er_vår("-javaagent:C:/x/plz-agent.jar"));
         assert!(!er_vår("-javaagent:C:/x/knoxlife-agent.jar.bak"));
         assert!(!er_vår("-Xmx3072m"));

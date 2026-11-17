@@ -1,0 +1,53 @@
+# Prøvene for launcheren og agenten på Windows, Linux og Mac. Repoet er offentlig, så kjøringene koster ingenting.
+name: Prøvene
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prover-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launcheren:
+    name: Launcheren (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup component add clippy
+      - run: cargo test --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+
+  agenten:
+    name: Agenten (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Bygg agenten og kjør prøvene
+        shell: bash
+        run: java/agent/bygg.sh
+      - name: SHA-256 av agenten
+        shell: bash
+        run: sha256sum java/agent/ut/knoxlife-agent.jar

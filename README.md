@@ -46,8 +46,17 @@ files" in Details, or Steam's "Verify integrity of game files", puts back anythi
 |---|---|
 | `launcher/kjerne` | The launcher's core, without a window or network: finding the game, the manifest, the version check, the download check, adding and removing the patch, and watching the game |
 | `launcher/knoxctl` | The same steps on the command line, for testing and troubleshooting |
+| `java/agent` | The Java agent (`knoxlife-agent.jar`): starts Mixin with our Java mods before the game's classes load, writes the stamp the launcher waits for, reads the travel ticket, and makes the anti-cheat report the server checks at login |
 
 Code comments and names are in Norwegian; everything players see is in English.
+
+## What the agent reports at login
+
+The server only lets in players whose game was started by the launcher. The agent looks at the Java the game runs in
+and lists what does not belong there: other `-javaagent`, native agents and debuggers, a changed boot class path or
+class loader, Java options in environment variables, extra files on the class path, class files in folders on the class
+path, and whether tools can attach to the game after it has started. It sends at most 8 findings, each at most 96
+characters, with **file names only – never folder paths**, so nothing about your folders or user name leaves your PC.
 
 ## Building and testing
 
@@ -55,7 +64,15 @@ Code comments and names are in Norwegian; everything players see is in English.
 cd launcher
 cargo test
 cargo build --release -p knoxctl
+
+java/agent/bygg.sh   # JDK 21+, curl and sha256sum (Git Bash on Windows)
 ```
+
+`bygg.sh` downloads Mixin, MixinExtras and ASM from Maven Central, checks each against the SHA-256 in
+`java/agent/libs.lock`, runs the tests, builds `knoxlife-agent.jar`, and finally starts a small stand-in game with the
+agent and a test mod to check that Mixin really changes the game's code as it loads. The jar has fixed timestamps and a
+fixed file order, so the same code and JDK give the same bytes: compare its SHA-256 with the file the launcher
+downloads.
 
 `knoxctl finn` shows where the game is, `knoxctl status` whether the patch is in, and `knoxctl sett-tilbake` puts the
 game back.
