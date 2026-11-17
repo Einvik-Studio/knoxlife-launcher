@@ -1,0 +1,15 @@
+Copyright (c) 2026 Einvik Studio. All rights reserved.
+
+The source code in this repository is published so that players of Knox Life can read it and check
+what the Knox Life launcher and the player side of its Java mods do on their computer, and so that
+anyone can rebuild the files and compare them with the ones the launcher downloads.
+
+No licence is granted. You may read the code and build it to verify the published files. You may
+not use, copy, modify, merge, publish, distribute, sublicense or sell the code or the files built
+from it, in whole or in part, without written permission from Einvik Studio.
+
+Third-party components keep their own licences. They are listed in THIRD-PARTY-NOTICES.md and are
+shipped with their licence texts.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO EVENT SHALL
+EINVIK STUDIO BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
