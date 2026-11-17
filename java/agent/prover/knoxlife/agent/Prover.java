@@ -166,4 +166,35 @@ public final class Prover {
         KnoxLife.settFunn(List.of());
         lik("v1|12|ok", KnoxLife.rapport());
     }
+
+    // ---------- det Lua ser ----------
+
+    static void prøveDeleneOgByggetForLua() {
+        KnoxLife.start(12);
+        lik(false, KnoxLifeJava.har("linje"));
+        KnoxLife.del("linje");
+        lik(true, KnoxLifeJava.har("linje"));
+        lik(false, KnoxLifeJava.har(null));
+        lik(12.0, KnoxLifeJava.bygg());
+    }
+
+    static void prøveHendelseskøenHolderRekkefølgenOgGrensen() {
+        while (KnoxLifeJava.nesteHendelse() != null) {
+            // tøm køen fra en annen prøve
+        }
+        KnoxLife.hendelse("{\"hendelse\":\"java_ok\"}");
+        KnoxLife.hendelse("{\"hendelse\":\"java_debug\"}");
+        lik("{\"hendelse\":\"java_ok\"}", KnoxLifeJava.nesteHendelse());
+        lik("{\"hendelse\":\"java_debug\"}", KnoxLifeJava.nesteHendelse());
+        lik(null, KnoxLifeJava.nesteHendelse());
+        for (int i = 0; i < KnoxLife.FLEST_HENDELSER + 5; i++) {
+            KnoxLife.hendelse("linje " + i);
+        }
+        lik("linje 5", KnoxLifeJava.nesteHendelse());
+        int igjen = 1;
+        while (KnoxLifeJava.nesteHendelse() != null) {
+            igjen++;
+        }
+        lik(KnoxLife.FLEST_HENDELSER, igjen);
+    }
 }

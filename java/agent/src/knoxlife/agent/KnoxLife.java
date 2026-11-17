@@ -3,6 +3,10 @@ package knoxlife.agent;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Det agenten vet mens spillet går, ett sted Java-modene kan spørre.
@@ -15,6 +19,12 @@ public final class KnoxLife {
     private static volatile List<String> funn = List.of();
     private static volatile Billett billett;
     private static final List<String> FEIL = Collections.synchronizedList(new ArrayList<>());
+    private static final Set<String> DELER = ConcurrentHashMap.newKeySet();
+    /** Linjene Lua skal føre i loggen ({@code server/KnoxLife/JavaServer.lua} i modet henter dem hvert tikk). */
+    private static final ConcurrentLinkedQueue<String> HENDELSER = new ConcurrentLinkedQueue<>();
+    private static final AtomicInteger I_KØ = new AtomicInteger();
+    /** Flest linjer i køen. Henter ikke Lua dem (modet er ikke lastet), går de eldste tapt i stedet for minnet. */
+    public static final int FLEST_HENDELSER = 10_000;
 
     private KnoxLife() {}
 
@@ -43,6 +53,32 @@ public final class KnoxLife {
         if (Boolean.getBoolean("knoxlife.feilsok")) {
             t.printStackTrace();
         }
+    }
+
+    /** En Java-del er lastet og virker («juksesperre», «linje» …). Modet spør med {@code KnoxLife.Java.har}. */
+    public static void del(String navn) {
+        DELER.add(navn);
+    }
+
+    public static boolean har(String navn) {
+        return navn != null && DELER.contains(navn);
+    }
+
+    /** En linje til loggen i modet: {@code {"hendelse":"…","data":{…}}}. */
+    public static void hendelse(String jsonLinje) {
+        HENDELSER.add(jsonLinje);
+        if (I_KØ.incrementAndGet() > FLEST_HENDELSER && HENDELSER.poll() != null) {
+            I_KØ.decrementAndGet();
+        }
+    }
+
+    /** Den eldste linjen i køen, eller {@code null}. */
+    public static String nesteHendelse() {
+        String linje = HENDELSER.poll();
+        if (linje != null) {
+            I_KØ.decrementAndGet();
+        }
+        return linje;
     }
 
     public static long bygg() {

@@ -7,9 +7,14 @@ import org.spongepowered.asm.launch.MixinBootstrap;
 import org.spongepowered.asm.mixin.MixinEnvironment;
 import org.spongepowered.asm.mixin.Mixins;
 
-/** Starter Mixin med Java-modene våre ({@code knoxlife.mixins.json}) og kobler det til Java før spillets klasser lastes. */
+/**
+ * Starter Mixin med Java-modene våre ({@code knoxlife.mixins.json}, og på serveren {@code knoxlife-server.mixins.json})
+ * og kobler det til Java før spillets klasser lastes.
+ */
 public final class Start {
     public static final String OPPSETT = "knoxlife.mixins.json";
+    /** Serverdelens Java-mods – finnes bare i serverens agent, som bygges i det private repoet. */
+    public static final String SERVERENS_OPPSETT = "knoxlife-server.mixins.json";
 
     private Start() {}
 
@@ -18,6 +23,9 @@ public final class Start {
         Tjeneste.laster = laster;
         MixinBootstrap.init();
         Mixins.addConfiguration(OPPSETT);
+        if (laster.getResource(SERVERENS_OPPSETT) != null) {
+            Mixins.addConfiguration(SERVERENS_OPPSETT);
+        }
         // Omformeren lages før MixinExtras, som henger sine utvidelser på den.
         var omformer = Tjeneste.omformer();
         MixinExtrasBootstrap.init();
