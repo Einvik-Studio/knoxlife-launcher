@@ -37,7 +37,11 @@ final class Omformer implements ClassFileTransformer {
         String punktum = navn.replace('/', '.');
         try {
             byte[] ut = mixin.transformClassBytes(punktum, punktum, bytes);
-            return ut == bytes ? null : ut;
+            if (ut == bytes) {
+                return null; // ingen Java-mod for denne klassen: Mixin gir de samme bytene tilbake
+            }
+            KnoxLife.endret(punktum);
+            return ut;
         } catch (Throwable t) {
             // Java svelger feil fra en omformer og laster klassen uendret. Feilen skrives og sendes i rapporten, så
             // serveren vet at patchen ikke er hel.

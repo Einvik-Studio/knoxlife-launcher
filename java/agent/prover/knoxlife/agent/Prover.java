@@ -165,6 +165,11 @@ public final class Prover {
         lik("v1|12|ok|javaagent x.jar|debugger", KnoxLife.rapport());
         KnoxLife.settFunn(List.of());
         lik("v1|12|ok", KnoxLife.rapport());
+        lik("v1|12|ok|debug mode", KnoxLife.rapport(true));
+        KnoxLife.settFunn(List.of("f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8"));
+        lik("v1|12|ok|debug mode|f1|f2|f3|f4|f5|f6|f7", KnoxLife.rapport(true));
+        lik("v1|12|ok|f1|f2|f3|f4|f5|f6|f7|f8", KnoxLife.rapport(false));
+        KnoxLife.settFunn(List.of());
     }
 
     // ---------- det Lua ser ----------

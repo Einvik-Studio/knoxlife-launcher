@@ -74,5 +74,16 @@ agent and a test mod to check that Mixin really changes the game's code as it lo
 fixed file order, so the same code and JDK give the same bytes: compare its SHA-256 with the file the launcher
 downloads.
 
+The Java mods themselves (`java/agent/mods/`) are compiled against the game's own jar, so they are only built when you
+point the build at a folder with `projectzomboid.jar` (with Java 25, the game's version):
+
+```sh
+SPILLETS_MAPPE="<folder with projectzomboid.jar>" java/agent/bygg.sh
+```
+
+That build also starts the agent against the real game and loads every class in it. If one of our mods no longer fits
+the game (a method was renamed, a class is gone), the build stops. GitHub does this on every change, with the game
+fetched from Steam's dedicated server; the game's files are never stored or published here.
+
 `knoxctl finn` shows where the game is, `knoxctl status` whether the patch is in, and `knoxctl sett-tilbake` puts the
 game back.

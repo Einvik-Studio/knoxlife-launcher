@@ -4,8 +4,10 @@
 #
 #   ./bygg.sh            bygg agenten og kjør alle prøvene
 #   UT=<mappe> ./bygg.sh bygg et annet sted (standard: ut/)
-#   SPILLETS_MAPPE=<mappe> ./bygg.sh   også porten: agenten mot spillets egen jar (mappen med projectzomboid.jar,
-#                                      i den dedikerte serveren `java/`). Trenger samme Java som spillet (25).
+#   SPILLETS_MAPPE=<mappe> ./bygg.sh   med Java-modene: mods/ kompileres mot spillets egne jar-filer (mappen med
+#                                      projectzomboid.jar, i den dedikerte serveren `java/`), og porten starter
+#                                      agenten mot spillet. Trenger samme Java som spillet (25). Uten mappen bygges
+#                                      agenten uten Java-modene – bare til prøvene, aldri til spillerne.
 #
 # Trenger JDK 21 eller nyere (javac, jar, java), curl og sha256sum – alt finnes i Git Bash på Windows med en JDK.
 set -euo pipefail
@@ -23,7 +25,7 @@ unset JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS || true
 
 sha() { sha256sum "$1" | cut -c1-64; }
 
-rm -rf "$UT/klasser" "$UT/innhold" "$UT/pakket" "$UT/prover" "$UT/e2e"
+rm -rf "$UT/klasser" "$UT/innhold" "$UT/pakket" "$UT/prover" "$UT/e2e" "$UT/mods" "$UT/oppsett"
 mkdir -p "$UT/libs" "$UT/klasser" "$UT/innhold/META-INF/licenses" "$UT/pakket" "$UT/prover" "$UT/e2e"
 # Windows (Git Bash): Java trenger stier som D:/…, ikke /d/….
 UT="$(cd "$UT" && (pwd -W 2>/dev/null || pwd))"
@@ -49,6 +51,27 @@ CP="$(IFS="$SEP"; echo "${LIBS[*]}")"
 echo "== kompilerer agenten"
 find src -name '*.java' | LC_ALL=C sort > "$UT/kilder.txt"
 javac --release "$RELEASE" -encoding UTF-8 -nowarn -proc:none -cp "$CP" -d "$UT/klasser" @"$UT/kilder.txt"
+
+SPILL_CP=""
+MODS=()
+if [[ -n "${SPILLETS_MAPPE:-}" ]]; then
+  [[ -f "$SPILLETS_MAPPE/projectzomboid.jar" ]] || { echo "Fant ikke projectzomboid.jar i $SPILLETS_MAPPE" >&2; exit 1; }
+  SPILL_CP="$(find "$SPILLETS_MAPPE" -maxdepth 1 -name '*.jar' | LC_ALL=C sort | tr '\n' "$SEP")"
+  echo "== kompilerer Java-modene mot spillet"
+  rm -rf "$UT/mods" && mkdir -p "$UT/mods"
+  find mods -name '*.java' | LC_ALL=C sort > "$UT/mods-kilder.txt"
+  javac --release "$RELEASE" -encoding UTF-8 -nowarn -proc:none -cp "$CP$SEP$UT/klasser$SEP$SPILL_CP" -d "$UT/mods" \
+    @"$UT/mods-kilder.txt"
+  # Hver klasse i knoxlife/mixin/ som slutter på Mixin, er én Java-mod.
+  while read -r k; do MODS+=("$k"); done < <(cd "$UT/mods/knoxlife/mixin" && find . -maxdepth 1 -name '*Mixin.class' \
+    | sed 's|^\./||; s|\.class$||' | LC_ALL=C sort)
+  echo "   ${#MODS[@]} Java-mods: ${MODS[*]}"
+fi
+# Oppsettet til Mixin: listen over Java-modene, og hver innføring må treffe (defaultRequire), ellers stopper agenten.
+liste=""
+for k in ${MODS[@]+"${MODS[@]}"}; do liste+="${liste:+, }\"$k\""; done
+mkdir -p "$UT/oppsett"
+printf '{\n  "required": true,\n  "minVersion": "0.8",\n  "package": "knoxlife.mixin",\n  "compatibilityLevel": "JAVA_21",\n  "mixins": [%s],\n  "injectors": { "defaultRequire": 1 }\n}\n' "$liste" > "$UT/oppsett/knoxlife.mixins.json"
 
 echo "== prøvene"
 find prover/knoxlife -name '*.java' | LC_ALL=C sort > "$UT/prover-kilder.txt"
@@ -76,6 +99,8 @@ cp lisenser/asm-LICENSE.txt "$UT/innhold/META-INF/licenses/asm-LICENSE.txt"
 cp ../../LICENSE "$UT/innhold/META-INF/licenses/knoxlife-LICENSE.txt"
 cp -R "$UT/klasser/." "$UT/innhold/"
 cp -R ressurser/. "$UT/innhold/"
+cp "$UT/oppsett/knoxlife.mixins.json" "$UT/innhold/"
+if [[ ${#MODS[@]} -gt 0 ]]; then cp -R "$UT/mods/." "$UT/innhold/"; fi
 
 # Én jar med faste tider og fast rekkefølge: samme kode gir de samme bytene.
 lag_jar() { # innhold-mappe, jar-fil
@@ -90,7 +115,7 @@ lag_jar "$UT/innhold" "$UT/knoxlife-agent.jar"
 echo "knoxlife-agent.jar  $(sha "$UT/knoxlife-agent.jar")  $(wc -c < "$UT/knoxlife-agent.jar") bytes"
 
 mkdir -p "$UT/porten"
-javac --release "$RELEASE" -encoding UTF-8 -nowarn -proc:none -cp "$UT/klasser" -d "$UT/porten" \
+javac --release "$RELEASE" -encoding UTF-8 -nowarn -proc:none -cp "$CP$SEP$UT/klasser" -d "$UT/porten" \
   porten/knoxlife/porten/Porten.java
 
 echo "== prøven ende til ende: et etterlignet spill med en prøve-mod"
@@ -138,9 +163,26 @@ grep -q "could not find any targets matching 'hilsen'" "$UT/e2e/porten.txt" \
   || { echo "porten stoppet, men av feil grunn:" >&2; cat "$UT/e2e/porten.txt" >&2; exit 1; }
 echo "   stoppet som den skal: prøve-moden fant ikke metoden «hilsen»"
 
+echo "== porten slipper gjennom når alt treffer, og stopper når klassen er borte"
+ut_porten="$(java -XX:-EnableDynamicAgentLoading -javaagent:"$UT/e2e/knoxlife-agent.jar" \
+  -cp "$UT/e2e/projectzomboid.jar$SEP$UT/porten" knoxlife.porten.Porten "$UT/e2e/projectzomboid.jar" 2>&1)" \
+  || { echo "porten stoppet et spill der alt traff:" >&2; echo "$ut_porten" >&2; exit 1; }
+[[ "$ut_porten" == *"1 klasser i spillet skal ha Java-mods"* ]] || { echo "$ut_porten" >&2; exit 1; }
+mkdir -p "$UT/e2e/borte"
+javac --release "$RELEASE" -encoding UTF-8 -nowarn -d "$UT/e2e/borte" prover/spill-borte/prove/Annet.java
+(cd "$UT/e2e/borte" && jar --create --file ../borte.jar --date="$DATO" .)
+if java -XX:-EnableDynamicAgentLoading -javaagent:"$UT/e2e/knoxlife-agent.jar" \
+    -cp "$UT/e2e/borte.jar$SEP$UT/porten" knoxlife.porten.Porten "$UT/e2e/borte.jar" > "$UT/e2e/borte.txt" 2>&1; then
+  echo "porten slapp gjennom et spill der klassen prøve-moden skal inn i, er borte" >&2
+  cat "$UT/e2e/borte.txt" >&2
+  exit 1
+fi
+grep -q "prove.Spillet got no Java mod" "$UT/e2e/borte.txt" \
+  || { echo "porten stoppet, men av feil grunn:" >&2; cat "$UT/e2e/borte.txt" >&2; exit 1; }
+echo "   slapp gjennom når alt traff, og stoppet når klassen var borte"
+
 if [[ -n "${SPILLETS_MAPPE:-}" ]]; then
   echo "== porten: agenten mot spillets egen jar ($SPILLETS_MAPPE)"
-  SPILL_CP="$(find "$SPILLETS_MAPPE" -maxdepth 1 -name '*.jar' | LC_ALL=C sort | tr '\n' "$SEP")"
   java -XX:-EnableDynamicAgentLoading -javaagent:"$UT/knoxlife-agent.jar" -Dknoxlife.bygg="$BYGG" \
     -cp "$SPILL_CP$UT/porten" knoxlife.porten.Porten "$SPILLETS_MAPPE/projectzomboid.jar"
 fi

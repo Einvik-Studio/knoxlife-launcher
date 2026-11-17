@@ -20,6 +20,7 @@ public final class KnoxLife {
     private static volatile Billett billett;
     private static final List<String> FEIL = Collections.synchronizedList(new ArrayList<>());
     private static final Set<String> DELER = ConcurrentHashMap.newKeySet();
+    private static final Set<String> ENDRET = ConcurrentHashMap.newKeySet();
     /** Linjene Lua skal føre i loggen ({@code server/KnoxLife/JavaServer.lua} i modet henter dem hvert tikk). */
     private static final ConcurrentLinkedQueue<String> HENDELSER = new ConcurrentLinkedQueue<>();
     private static final AtomicInteger I_KØ = new AtomicInteger();
@@ -53,6 +54,15 @@ public final class KnoxLife {
         if (Boolean.getBoolean("knoxlife.feilsok")) {
             t.printStackTrace();
         }
+    }
+
+    /** En av spillets klasser fikk Java-modene sine da den ble lastet. Porten sjekker at hver klasse som skal, fikk det. */
+    public static void endret(String klasse) {
+        ENDRET.add(klasse);
+    }
+
+    public static Set<String> endret() {
+        return Set.copyOf(ENDRET);
     }
 
     /** En Java-del er lastet og virker («juksesperre», «linje» …). Modet spør med {@code KnoxLife.Java.har}. */
@@ -102,9 +112,25 @@ public final class KnoxLife {
         return b;
     }
 
+    /** Funnet som sier at spillet går i debug-modus. Serveren har sin egen regel for det (launcher.md 3.3 punkt 2). */
+    public static final String DEBUG = "debug mode";
+
     public static String rapport() {
+        return rapport(false);
+    }
+
+    /** Rapporten slik den sendes i innloggingen. Debug-modus står først, så den alltid er med innenfor grensen. */
+    public static String rapport(boolean debug) {
         StringBuilder s = new StringBuilder("v1|").append(bygg).append('|').append(FEIL.isEmpty() ? "ok" : "feil");
+        int n = 0;
+        if (debug) {
+            s.append('|').append(DEBUG);
+            n++;
+        }
         for (String f : funn) {
+            if (n++ >= Javavakt.FLEST_FUNN) {
+                break;
+            }
             s.append('|').append(f);
         }
         return s.toString();
