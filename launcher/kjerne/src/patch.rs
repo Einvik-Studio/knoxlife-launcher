@@ -59,6 +59,12 @@ pub struct Patch<'a> {
     pub bygg: u64,
     /// Filen agenten skriver stempelet sitt i (3.2 punkt 10 i systemdokumentet).
     pub stempel: &'a Path,
+    /// Spillerens hjemmemappe. Stempelet skrives da som `~/…`, og agenten finner hjemmemappen selv – så et brukernavn
+    /// med «ø» aldri havner i spillets fil.
+    pub hjem: Option<&'a Path>,
+    /// En mappe Java alltid kan lese (Windows: `C:\Users\Public\KnoxLife`). Agenten kopieres dit bare når stien til
+    /// launcherens mappe har tegn utenfor ASCII og disken ikke har korte 8.3-navn.
+    pub reserve: Option<&'a Path>,
 }
 
 pub fn sha256(bytes: &[u8]) -> String {
@@ -100,13 +106,25 @@ pub fn er_vår(valg: &str) -> bool {
         || valg == UTEN_DYNAMISKE_AGENTER
 }
 
-fn våre_valg(p: &Patch) -> Vec<String> {
-    vec![
+fn våre_valg(p: &Patch) -> Resultat<Vec<String>> {
+    // Java leser filen i Windows' gamle tegnsett: en sti med tegn utenfor ASCII peker på ingenting, og agenten hoppes
+    // over uten at noen sier fra. Da nektes det heller her.
+    let stempel = match p.hjem.and_then(|h| p.stempel.strip_prefix(h).ok()) {
+        Some(rel) => format!("~/{}", rel.to_string_lossy().replace('\\', "/")),
+        None => jvm_sti(p.stempel),
+    };
+    if !crate::sti::kan_leses_av_java(p.agent) {
+        return Err(Feil::StiKanIkkeLeses(p.agent.to_path_buf()));
+    }
+    if cfg!(windows) && !stempel.is_ascii() {
+        return Err(Feil::StiKanIkkeLeses(p.stempel.to_path_buf()));
+    }
+    Ok(vec![
         format!("{AGENT_FLAGG}{}", jvm_sti(p.agent)),
         format!("{VERDI_FORAN}bygg={}", p.bygg),
-        format!("{VERDI_FORAN}stempel={}", jvm_sti(p.stempel)),
+        format!("{VERDI_FORAN}stempel={stempel}"),
         UTEN_DYNAMISKE_AGENTER.to_string(),
-    ]
+    ])
 }
 
 // ---------- ProjectZomboid64.json ----------
@@ -143,7 +161,7 @@ pub fn json_med_patch(bytes: &[u8], p: &Patch) -> Resultat<Vec<u8>> {
     let mut v = json_les(bytes, "ProjectZomboid64.json")?;
     let args = json_vm_args(&mut v);
     args.retain(|a| !a.as_str().is_some_and(er_vår));
-    for (i, valg) in våre_valg(p).into_iter().enumerate() {
+    for (i, valg) in våre_valg(p)?.into_iter().enumerate() {
         args.insert(i, Value::String(valg));
     }
     Ok((serde_json::to_string_pretty(&v)? + "\n").into_bytes())
@@ -188,7 +206,7 @@ pub fn plist_med_patch(bytes: &[u8], p: &Patch) -> Resultat<Vec<u8>> {
     let mut v = plist_les(bytes)?;
     let valg = plist_valg(&mut v);
     valg.retain(|o| !o.as_string().is_some_and(er_vår));
-    for (i, linje) in våre_valg(p).into_iter().enumerate() {
+    for (i, linje) in våre_valg(p)?.into_iter().enumerate() {
         valg.insert(i, plist::Value::String(linje));
     }
     plist_skriv(&v)
@@ -239,14 +257,30 @@ pub fn legg_inn(spill: &Spill, tilstand: &Path, p: &Patch) -> Resultat<()> {
     let bytes = fs::read(&fil).map_err(|_| Feil::SpillfilØdelagt(filnavn(&fil)))?;
     let original = renset(&bytes, spill.plattform)?;
 
-    // Mac: agenten må ligge inni app-pakken, der spillets egen Java leter.
-    let (agent_i_spillet, lagt_til, mapper_laget) = if spill.plattform == Plattform::Mac {
-        let mappe = spill.java_mappe().join(MAC_MAPPE);
-        let agent = mappe.join(AGENT_FIL);
-        let mapper = if mappe.exists() { Vec::new() } else { vec![mappe] };
-        (agent.clone(), vec![agent], mapper)
+    // Mac: agenten må ligge inni app-pakken, der spillets egen Java leter. Windows: i reservemappen når Java ikke kan lese
+    // stien til launcherens mappe. Ellers brukes den der den ligger.
+    let kopi_til = if spill.plattform == Plattform::Mac {
+        Some(spill.java_mappe().join(MAC_MAPPE))
+    } else if !crate::sti::kan_leses_av_java(p.agent) {
+        p.reserve.map(|r| r.join("patch").join(p.bygg.to_string()))
     } else {
-        (p.agent.to_path_buf(), Vec::new(), Vec::new())
+        None
+    };
+    let (agent_i_spillet, lagt_til, mapper_laget) = match kopi_til {
+        Some(mappe) => {
+            let agent = mappe.join(AGENT_FIL);
+            // Mappene vi lager, innerste først, så nøyaktig de fjernes igjen.
+            let mut mapper = Vec::new();
+            let mut m = mappe.clone();
+            while !m.exists() {
+                mapper.push(m.clone());
+                if !m.pop() {
+                    break;
+                }
+            }
+            (agent.clone(), vec![agent], mapper)
+        }
+        None => (p.agent.to_path_buf(), Vec::new(), Vec::new()),
     };
 
     // 2. Kopien av originalen, lest tilbake for å være sikker.
@@ -272,7 +306,7 @@ pub fn legg_inn(spill: &Spill, tilstand: &Path, p: &Patch) -> Resultat<()> {
     for mappe in merke.mapper_laget.iter().rev() {
         fs::create_dir_all(mappe)?;
     }
-    if spill.plattform == Plattform::Mac {
+    if agent_i_spillet != p.agent {
         fs::copy(p.agent, &agent_i_spillet)?;
     }
     let i_spillet = Patch { agent: &agent_i_spillet, ..p.clone() };
@@ -398,7 +432,7 @@ mod prøver {
 
     impl Oppsett {
         fn patch(&self) -> Patch<'_> {
-            Patch { agent: &self.agent, bygg: 12, stempel: &self.stempel }
+            Patch { agent: &self.agent, bygg: 12, stempel: &self.stempel, hjem: None, reserve: None }
         }
         fn fil(&self) -> Vec<u8> {
             fs::read(self.spill.innstillingsfil()).unwrap()
@@ -437,6 +471,16 @@ mod prøver {
             assert!(!er_lagt_inn(&o.spill, &o.tilstand).unwrap());
             assert!(!sett_tilbake(&o.spill, &o.tilstand).unwrap(), "andre gang er det ingenting å gjøre");
         }
+    }
+
+    #[test]
+    fn stempelet_skrives_fra_hjemmemappen_så_brukernavnet_ikke_står_i_filen() {
+        let o = oppsett(Plattform::Windows);
+        let hjem = o.stempel.parent().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+        legg_inn(&o.spill, &o.tilstand, &Patch { hjem: Some(&hjem), ..o.patch() }).unwrap();
+        assert_eq!(vm_args(&o.fil())[2], "-Dknoxlife.stempel=~/Zomboid/KnoxLife/stempel.txt");
+        sett_tilbake(&o.spill, &o.tilstand).unwrap();
+        assert_eq!(o.fil(), JSON.as_bytes());
     }
 
     #[test]

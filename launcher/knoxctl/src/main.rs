@@ -87,10 +87,10 @@ fn kjør(args: &[String]) -> Resultat<()> {
             let agent = std::fs::canonicalize(agent)?;
             let bygg: u64 = bygg.parse().map_err(|_| std::io::Error::other("bygg må være et tall"))?;
             let stempel = start::stempel_sti(&start::knox_mappe(&hjem()));
-            if !knoxlife_kjerne::sti::kan_leses_av_java(&agent) {
-                return Err(std::io::Error::other("stien til agenten kan ikke leses av Java på denne PC-en").into());
-            }
-            patch::legg_inn(&s, &tilstand(), &Patch { agent: &agent, bygg, stempel: &stempel })?;
+            let hjem = hjem();
+            let reserve = std::env::var_os("PUBLIC").map(|p| PathBuf::from(p).join("KnoxLife"));
+            let p = Patch { agent: &agent, bygg, stempel: &stempel, hjem: Some(&hjem), reserve: reserve.as_deref() };
+            patch::legg_inn(&s, &tilstand(), &p)?;
             println!("lagt inn: bygg {bygg} i {}", s.innstillingsfil().display());
         }
         ["sett-tilbake"] => {

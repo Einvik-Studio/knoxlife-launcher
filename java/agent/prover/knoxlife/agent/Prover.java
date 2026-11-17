@@ -153,6 +153,12 @@ public final class Prover {
         lik("feil=IllegalStateException: noe gikk galt ?\ntid=2000\n", tekst);
     }
 
+    static void prøveStempeletFraHjemmemappen() {
+        Path hjem = tom.resolve("bjorn");
+        lik(hjem.resolve("Zomboid/KnoxLife/stempel.txt"), Agent.sti("~/Zomboid/KnoxLife/stempel.txt", hjem.toString()));
+        lik(Path.of("/a/b.txt"), Agent.sti("/a/b.txt", hjem.toString()));
+    }
+
     static void prøveRapportlinjen() {
         KnoxLife.start(12);
         KnoxLife.settFunn(List.of("javaagent x.jar", "debugger"));

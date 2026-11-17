@@ -38,6 +38,9 @@ pub enum Feil {
     #[error("The game files could not be put back ({0}). Use \"Restore game files\" in Details, or verify the game files in Steam.")]
     KunneIkkeSetteTilbake(String),
 
+    #[error("Knox Life cannot use the folder {0} because its name has letters Java cannot read on this PC. Use \"Copy report\" and send it to staff on Discord.")]
+    StiKanIkkeLeses(PathBuf),
+
     #[error("{0}")]
     Io(#[from] std::io::Error),
 

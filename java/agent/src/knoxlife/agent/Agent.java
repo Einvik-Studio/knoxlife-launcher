@@ -23,7 +23,7 @@ public final class Agent {
     public static void premain(String argumenter, Instrumentation inst) {
         long bygg = Long.getLong("knoxlife.bygg", 0L);
         String stempelSti = System.getProperty("knoxlife.stempel");
-        Path stempel = stempelSti == null || stempelSti.isBlank() ? null : Path.of(stempelSti);
+        Path stempel = stempelSti == null || stempelSti.isBlank() ? null : sti(stempelSti, System.getProperty("user.home"));
         try {
             startet = true;
             KnoxLife.start(bygg);
@@ -42,6 +42,17 @@ public final class Agent {
                 Stempel.feil(stempel, t, System.currentTimeMillis());
             }
         }
+    }
+
+    /**
+     * En sti fra launcheren. {@code ~/} foran betyr spillerens hjemmemappe: launcheren skriver stempelet slik, så et
+     * brukernavn med «ø» aldri står i spillets fil (Windows leser den i et gammelt tegnsett), og Java finner mappen selv.
+     */
+    static Path sti(String verdi, String hjem) {
+        if (verdi.startsWith("~/") && hjem != null) {
+            return Path.of(hjem).resolve(verdi.substring(2));
+        }
+        return Path.of(verdi);
     }
 
     /** Agentens egen jar-fil. */

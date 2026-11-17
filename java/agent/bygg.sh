@@ -105,7 +105,7 @@ STEMPEL="$UT/e2e/Zomboid/KnoxLife/stempel.txt"
 mkdir -p "$(dirname "$STEMPEL")"
 printf 'adresse=play.example.invalid\nport=16261\nbillett=prove\n' > "$(dirname "$STEMPEL")/reise.txt"
 med="$(java -XX:-EnableDynamicAgentLoading -javaagent:"$UT/e2e/knoxlife-agent.jar" -Dknoxlife.bygg=7 \
-  -Dknoxlife.stempel="$STEMPEL" -cp "$UT/e2e/projectzomboid.jar" prove.Spillet)"
+  -Dknoxlife.stempel="~/Zomboid/KnoxLife/stempel.txt" -Duser.home="$UT/e2e" -cp "$UT/e2e/projectzomboid.jar" prove.Spillet)"
 echo "$med" | sed 's/^/   /'
 [[ "$med" == *"hilsen=endret av knoxlife"* ]] || { echo "Mixin ble ikke lagt inn" >&2; exit 1; }
 [[ "$med" == *"tall=42"* ]] || { echo "MixinExtras ble ikke lagt inn" >&2; exit 1; }
