@@ -28,6 +28,7 @@ public final class Agent {
             startet = true;
             KnoxLife.start(bygg);
             KnoxLife.settFunn(Javavakt.funn(Javavakt.Inntrykk.herfra(egenJar())));
+            KnoxLife.del("juksesperre");
             if (stempel != null) {
                 KnoxLife.settBillett(Billett.hent(stempel.resolveSibling("reise.txt"), Instant.now()));
             }
