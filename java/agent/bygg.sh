@@ -29,6 +29,7 @@ UT="$(cd "$UT" && (pwd -W 2>/dev/null || pwd))"
 echo "== bibliotekene (Maven Central, sjekket mot libs.lock)"
 LIBS=()
 while read -r forventet navn adresse; do
+  adresse="${adresse%$'\r'}"
   [[ -z "${forventet:-}" || "$forventet" == \#* ]] && continue
   fil="$UT/libs/$navn"
   if [[ ! -f "$fil" || "$(sha "$fil")" != "$forventet" ]]; then
