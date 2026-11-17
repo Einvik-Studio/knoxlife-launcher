@@ -1,0 +1,9 @@
+knoxctl finn                                  hvor spillet og launcherens mappe ligger
+knoxctl status                                er patchen lagt inn nå?
+knoxctl jar-sha                               SHA-256 av spillets projectzomboid.jar
+knoxctl legg-inn <agent.jar> <bygg>           legg inn patchen med denne agenten
+knoxctl sett-tilbake                          sett spillet tilbake
+knoxctl sjekk-manifest <json> <sig> [nøkkel]  sjekk signaturen og innholdet
+knoxctl kjører                                går spillet nå?
+
+--spill <mappe>   bruk denne spillmappen (steamapps/common/ProjectZomboid) i stedet for å lete
