@@ -165,6 +165,38 @@ pub fn finn_spillet(steam_mapper: &[PathBuf], plattform: Plattform) -> Resultat<
     Err(if fant_steam { Feil::SpilletIkkeFunnet } else { Feil::SteamIkkeFunnet })
 }
 
+/// Spillet i en mappe spilleren har valgt med «Choose folder»: spillets egen mappe, en mappe rett inni den (Linux:
+/// `projectzomboid`, Mac: `Project Zomboid.app`), et Steam-bibliotek eller Steams egen mappe.
+pub fn spillet_i_mappe(mappe: &Path, plattform: Plattform) -> Option<Spill> {
+    let mut kandidater = vec![mappe.to_path_buf()];
+    kandidater.extend(mappe.parent().map(Path::to_path_buf));
+    kandidater
+        .into_iter()
+        .map(|k| Spill::ny(k, plattform))
+        .find(Spill::finnes)
+        .or_else(|| finn_spillet(&[mappe.to_path_buf()], plattform).ok())
+}
+
+/// Filen i launcherens mappe med spillmappen spilleren valgte.
+const VALGT_MAPPE_FIL: &str = "spillmappe.txt";
+
+/// Spillet i mappen spilleren valgte sist – bare hvis det fortsatt ligger der.
+pub fn valgt_spill(tilstand: &Path, plattform: Plattform) -> Option<Spill> {
+    let tekst = fs::read_to_string(tilstand.join(VALGT_MAPPE_FIL)).ok()?;
+    let spill = Spill::ny(tekst.trim_end_matches(['\r', '\n']), plattform);
+    spill.finnes().then_some(spill)
+}
+
+/// Husker mappen spilleren valgte. En sti som ikke er gyldig UTF-8, huskes ikke (spillet finnes likevel denne gangen).
+pub fn husk_valgt_spill(tilstand: &Path, spill: &Spill) -> Resultat<()> {
+    let Some(sti) = spill.rot.to_str() else { return Ok(()) };
+    fs::create_dir_all(tilstand)?;
+    let tmp = tilstand.join(format!("{VALGT_MAPPE_FIL}.tmp"));
+    fs::write(&tmp, sti)?;
+    fs::rename(tmp, tilstand.join(VALGT_MAPPE_FIL))?;
+    Ok(())
+}
+
 /// Steams mappe fra registeret på Windows (`HKCU\Software\Valve\Steam\SteamPath`). `None` andre steder.
 #[cfg(windows)]
 pub fn steam_fra_registeret() -> Option<PathBuf> {
@@ -338,6 +370,24 @@ mod prøver {
             launcherens_mappe(Plattform::Mac, h, None, None),
             PathBuf::from("/h/Library/Application Support/KnoxLife")
         );
+    }
+
+    #[test]
+    fn valgt_mappe_finner_spillet_og_huskes() {
+        let m = Mappe::ny();
+        let bibliotek = m.sti().join("Spill");
+        let spill = lag_spill(&bibliotek, Plattform::Linux);
+        assert_eq!(spillet_i_mappe(&spill.rot, Plattform::Linux), Some(spill.clone()), "spillets egen mappe");
+        assert_eq!(spillet_i_mappe(&spill.java_mappe(), Plattform::Linux), Some(spill.clone()), "en mappe inni spillet");
+        assert_eq!(spillet_i_mappe(&bibliotek, Plattform::Linux), Some(spill.clone()), "Steam-biblioteket");
+        assert_eq!(spillet_i_mappe(&m.sti().join("tom"), Plattform::Linux), None);
+
+        let tilstand = m.sti().join("KnoxLife");
+        assert_eq!(valgt_spill(&tilstand, Plattform::Linux), None);
+        husk_valgt_spill(&tilstand, &spill).unwrap();
+        assert_eq!(valgt_spill(&tilstand, Plattform::Linux), Some(spill.clone()));
+        fs::remove_file(spill.jar()).unwrap();
+        assert_eq!(valgt_spill(&tilstand, Plattform::Linux), None, "mappen huskes bare mens spillet ligger der");
     }
 
     #[test]

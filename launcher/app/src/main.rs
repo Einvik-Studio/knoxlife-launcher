@@ -19,6 +19,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 const VERSJON: &str = env!("CARGO_PKG_VERSION");
@@ -54,8 +55,12 @@ fn reserve() -> Option<PathBuf> {
     }
 }
 
+/// Spillet: i mappen spilleren valgte med «Choose folder», ellers der Steam har det.
 fn finn_spillet() -> Resultat<Spill> {
-    spillet::finn_spillet(&spillet::steam_mapper_her(&hjem()), Plattform::denne())
+    match spillet::valgt_spill(&tilstand(), Plattform::denne()) {
+        Some(spill) => Ok(spill),
+        None => spillet::finn_spillet(&spillet::steam_mapper_her(&hjem()), Plattform::denne()),
+    }
 }
 
 // ---------- maskinen ----------
@@ -211,6 +216,22 @@ async fn spill(app: AppHandle, launcher: State<'_, Launcher>) -> Result<Utfall, 
     svar
 }
 
+/// «Choose folder» når spillet ikke ble funnet: `true` når spillet ligger i mappen spilleren valgte (og den huskes),
+/// `false` når spilleren lukket valget. Kjøres utenfor vinduets tråd, ellers står vinduet stille mens valget er åpent.
+#[tauri::command]
+async fn velg_mappe(app: AppHandle) -> Result<bool, String> {
+    let Some(valgt) = app.dialog().file().set_title("Choose the Project Zomboid folder").blocking_pick_folder() else {
+        return Ok(false);
+    };
+    let mappe = valgt.into_path().map_err(|e| e.to_string())?;
+    let spill = spillet::spillet_i_mappe(&mappe, Plattform::denne()).ok_or(
+        "Project Zomboid is not in that folder. Choose the folder Steam installed it in \
+         (in Steam: right-click the game, Manage, Browse local files).",
+    )?;
+    spillet::husk_valgt_spill(&tilstand(), &spill).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 /// «Copy» ved Steam-ID-en under «Details».
 #[tauri::command]
 fn kopier_steam_id(app: AppHandle) -> Result<(), String> {
@@ -268,12 +289,14 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(Launcher::default())
         .invoke_handler(tauri::generate_handler![
             oversikt,
             status,
             spill,
+            velg_mappe,
             kopier_steam_id,
             sett_tilbake,
             kopier_rapport,

@@ -2,7 +2,7 @@
 
 The launcher is built with these Rust crates (from crates.io, under their own licences, mostly MIT or Apache-2.0):
 serde, serde_json, sha2, hex, ed25519-dalek, thiserror, plist, sysinfo and windows-sys, and for the window Tauri with
-its clipboard, opener and single-instance plugins, and ureq. `cargo tree` lists the full set.
+its clipboard, dialog, opener and single-instance plugins, and ureq. `cargo tree` lists the full set.
 
 The window uses three fonts under the SIL Open Font License 1.1, with the licence texts next to them in
 `launcher/app/ui/fonter/`:

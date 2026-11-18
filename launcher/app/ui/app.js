@@ -21,11 +21,13 @@ const STEGENE = {
 };
 const OPPDATERT =
   "Project Zomboid has updated. Knox Life is getting ready for it – usually within a few hours. See #announcements on Discord.";
+const IKKE_FUNNET = "Project Zomboid was not found. Choose the folder it is installed in.";
 const IKKE_LASTET =
   'The Knox Life patch did not load. Press "Copy report" and send it to staff on Discord.';
 
 let iGang = false;
 let klar = false;
+let spilletFunnet = true;
 
 function settStatus(tekst, prikk, detaljer) {
   $("statustekst").textContent = tekst;
@@ -33,9 +35,10 @@ function settStatus(tekst, prikk, detaljer) {
   if (detaljer !== undefined) $("detaljlinje").textContent = detaljer;
 }
 
-function visMelding(tekst, { rapport = false, ok = false } = {}) {
+function visMelding(tekst, { rapport = false, ok = false, velg = false } = {}) {
   $("meldingstekst").textContent = tekst;
   $("melding-rapport").hidden = !rapport;
+  $("melding-velg").hidden = !velg;
   $("melding").classList.toggle("ok", ok);
   $("melding").hidden = false;
 }
@@ -96,7 +99,9 @@ async function hentStatus() {
   if (s.status === "feil") {
     settStatus("Knox Life could not be reached", "feil", linje2([]));
     visNyheter([]);
-    visMelding(s.melding);
+    // Statuslinjen sier at nettet svikter; meldingen viser det spilleren kan rette her og nå først.
+    if (spilletFunnet) visMelding(s.melding);
+    else visMelding(IKKE_FUNNET, { velg: true });
   } else {
     const spill = [`Game ${s.spillversjon}`, `Patch ${s.bygg}`];
     visNyheter(s.nyheter);
@@ -105,6 +110,9 @@ async function hentStatus() {
     } else if (s.status === "venter_pa_spillet") {
       settStatus("Knox Life is getting ready for the new game version", "venter", linje2(spill));
       visMelding(OPPDATERT);
+      klar = false;
+    } else if (!spilletFunnet) {
+      settStatus("Project Zomboid was not found", "feil", linje2(spill));
       klar = false;
     } else {
       settStatus("Ready", "klar", linje2(spill));
@@ -127,7 +135,10 @@ async function spill() {
       visMelding(IKKE_LASTET, { rapport: true });
     }
   } catch (feil) {
-    visMelding(String(feil), { rapport: true });
+    // Fant ikke launcheren spillet, kan spilleren peke på mappen selv.
+    const o = await invoke("oversikt").catch(() => ({ spillet: true }));
+    spilletFunnet = o.spillet;
+    visMelding(String(feil), { rapport: o.spillet, velg: !o.spillet });
   } finally {
     iGang = false;
     oppdaterPlay();
@@ -157,8 +168,9 @@ async function start() {
   $("versjon").textContent = `Launcher ${o.launcher}`;
   $("detaljer-versjon").textContent = `Launcher ${o.launcher}`;
   $("detaljlinje").textContent = linje2([]);
+  spilletFunnet = o.spillet;
   if (!o.spillet) {
-    visMelding("Project Zomboid was not found. Install it in Steam, then restart the launcher.");
+    visMelding(IKKE_FUNNET, { velg: true });
   }
   await hentStatus();
 }
@@ -182,6 +194,17 @@ $("lukk").addEventListener("click", () => {
   vinduet.close();
 });
 $("melding-lukk").addEventListener("click", skjulMelding);
+$("melding-velg").addEventListener("click", async () => {
+  try {
+    if (await invoke("velg_mappe")) {
+      spilletFunnet = true;
+      visMelding("Project Zomboid was found. Press Play when you are ready.", { ok: true });
+      hentStatus();
+    }
+  } catch (feil) {
+    visMelding(String(feil), { velg: true });
+  }
+});
 $("melding-rapport").addEventListener("click", () => kommando("kopier_rapport", () => "The report is copied. Paste it to staff on Discord."));
 $("detaljer-knapp").addEventListener("click", () => åpneDetaljer(true));
 $("detaljer-lukk").addEventListener("click", () => åpneDetaljer(false));
