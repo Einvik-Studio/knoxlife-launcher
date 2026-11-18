@@ -9,6 +9,7 @@
 
 use crate::feil::{Feil, Resultat};
 use crate::vdf;
+use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -198,6 +199,28 @@ pub fn launcherens_mappe(plattform: Plattform, hjem: &Path, local_appdata: Optio
     }
 }
 
+/// Steam-kontoen som er logget inn sist på denne PC-en (`config/loginusers.vdf`): Steam-ID-en og navnet spilleren har i
+/// Steam. Launcheren viser navnet og kopierer ID-en under «Details» – ingenting av det sendes noe sted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SteamBruker {
+    pub id: String,
+    pub navn: String,
+}
+
+pub fn steam_brukeren(steam_mapper: &[PathBuf]) -> Option<SteamBruker> {
+    steam_mapper.iter().find_map(|steam| {
+        let tekst = fs::read_to_string(steam.join("config").join("loginusers.vdf")).ok()?;
+        let rot = vdf::les(&tekst)?;
+        let brukere = rot.blokk("users")?;
+        let tid = |b: &vdf::Blokk| b.tekst("Timestamp").and_then(|t| t.parse::<u64>().ok()).unwrap_or(0);
+        let (id, b) = brukere
+            .blokker()
+            .filter(|(id, _)| id.len() == 17 && id.bytes().all(|c| c.is_ascii_digit()))
+            .max_by_key(|(_, b)| (b.tekst("MostRecent") == Some("1"), tid(b)))?;
+        Some(SteamBruker { id: id.to_string(), navn: b.tekst("PersonaName").unwrap_or_default().to_string() })
+    })
+}
+
 /// Alle stedene Steam kan ligge på denne PC-en, registeret først på Windows.
 pub fn steam_mapper_her(hjem: &Path) -> Vec<PathBuf> {
     let plattform = Plattform::denne();
@@ -213,6 +236,22 @@ pub fn steam_mapper_her(hjem: &Path) -> Vec<PathBuf> {
 #[cfg(test)]
 mod prøver {
     use super::*;
+
+    #[test]
+    fn steam_brukeren_er_den_sist_innlogget() {
+        let m = crate::prøvehjelp::Mappe::ny();
+        let steam = m.sti().join("Steam");
+        fs::create_dir_all(steam.join("config")).unwrap();
+        fs::write(
+            steam.join("config").join("loginusers.vdf"),
+            "\"users\"\n{\n\t\"76561190000000001\"\n\t{\n\t\t\"AccountName\"\t\t\"a\"\n\t\t\"PersonaName\"\t\t\"Gammel\"\n\t\t\"MostRecent\"\t\t\"0\"\n\t\t\"Timestamp\"\t\t\"1700000000\"\n\t}\n\t\"76561190000000002\"\n\t{\n\t\t\"AccountName\"\t\t\"b\"\n\t\t\"PersonaName\"\t\t\"Bjørn\"\n\t\t\"mostrecent\"\t\t\"1\"\n\t\t\"Timestamp\"\t\t\"1600000000\"\n\t}\n}\n",
+        )
+        .unwrap();
+        let tom = m.sti().join("ingenting");
+        let b = steam_brukeren(&[tom, steam]).unwrap();
+        assert_eq!(b, SteamBruker { id: "76561190000000002".into(), navn: "Bjørn".into() });
+        assert_eq!(steam_brukeren(&[m.sti().join("ingenting")]), None);
+    }
     use crate::prøvehjelp::Mappe;
 
     fn lag_spill(bibliotek: &Path, plattform: Plattform) -> Spill {

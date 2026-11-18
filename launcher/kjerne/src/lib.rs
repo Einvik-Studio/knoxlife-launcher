@@ -1,5 +1,5 @@
 //! Kjernen i Knox Life-launcheren – alt launcheren gjør med filene, uten vindu og uten nett, så hvert steg kan prøves
-//! for seg. Vinduet (Tauri) og nedlastingen bygger på dette.
+//! for seg. [`okt::kjør`] tar hele økten i rekkefølge; vinduet gir den nettet og maskinen.
 //!
 //! Rekkefølgen når spilleren trykker «Play» (systemdokumentet `launcher.md` 3.2 i det private repoet, sammendraget i
 //! `README.md` her):
@@ -15,8 +15,10 @@
 pub mod feil;
 pub mod manifest;
 pub mod nedlasting;
+pub mod okt;
 pub mod patch;
 pub mod porten;
+pub mod rapport;
 pub mod spillet;
 pub mod start;
 pub mod sti;

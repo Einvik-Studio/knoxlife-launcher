@@ -8,6 +8,15 @@ pub enum Feil {
     #[error("Project Zomboid was not found. Choose the folder it is installed in.")]
     SpilletIkkeFunnet,
 
+    #[error("Close Project Zomboid first, then press Play.")]
+    SpilletKjører,
+
+    #[error("Steam could not be started ({0}). Start Steam yourself, then press Play.")]
+    SteamStartetIkke(String),
+
+    #[error("Knox Life could not be reached ({0}). Check your internet connection and press Play again.")]
+    Nett(String),
+
     #[error("Steam was not found. Install Steam and Project Zomboid, then try again.")]
     SteamIkkeFunnet,
 
