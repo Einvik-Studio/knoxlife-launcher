@@ -452,4 +452,174 @@ public final class Prover {
     static void prøveTilbakeViserAldriPassordet() {
         sant(!inn().toString().contains("hemmelig"), inn().toString());
     }
+
+    // ---------- J7 profileren og J9 hendelsene som hoppes over ----------
+
+    static void prøveFunksjonenFraStien() {
+        lik(new Profil.Funksjon("KnoxLife", "server/KnoxLife/BildeServer.lua", 186), Profil.Funksjon.av(
+                "C:\\Users\\spiller\\Zomboid\\mods\\KnoxLife\\42.0\\media\\lua\\server\\KnoxLife\\BildeServer.lua", 186));
+        lik(new Profil.Funksjon("Tow", "client/TowCar.lua", 12), Profil.Funksjon.av(
+                "/steam/workshop/content/108600/3000000001/mods/Tow/42/media/lua/client/TowCar.lua", 12));
+        lik(new Profil.Funksjon("game", "shared/Items/ItemPicker.lua", 3),
+                Profil.Funksjon.av("@media/lua/shared/Items/ItemPicker.lua", 3));
+        lik(new Profil.Funksjon("Tow", "client/TowCar.lua", 0), Profil.Funksjon.av("mods/Tow/media/lua/client/TowCar.lua", -4));
+        lik(new Profil.Funksjon("game", "Fil.lua", 1), Profil.Funksjon.av("Fil.lua", 1));
+        lik(Profil.Funksjon.UKJENT, Profil.Funksjon.av(null, 1));
+        lik("KnoxLife server/X.lua:7", new Profil.Funksjon("KnoxLife", "server/X.lua", 7).tekst());
+    }
+
+    /** En profil der funksjonene heter det nøkkelen sier («mod fil:linje»). */
+    static Profil profil() {
+        var p = new Profil();
+        p.navngi(n -> {
+            String[] d = String.valueOf(n).split(" ");
+            int kolon = d[1].lastIndexOf(':');
+            return new Profil.Funksjon(d[0], d[1].substring(0, kolon), Integer.parseInt(d[1].substring(kolon + 1)));
+        });
+        return p;
+    }
+
+    static void kall(Profil p, Object hendelse, String navn, Object funksjon, long ns) {
+        Object t = p.før(hendelse, navn, funksjon);
+        if (t != null) {
+            p.etter(t, ns);
+        }
+    }
+
+    static void prøveProfilenTellerOgGirDeDyresteFørst() {
+        var p = profil();
+        Object tikk = new Object();
+        Object kommando = new Object();
+        p.på(true, 1_000);
+        for (int i = 0; i < 10; i++) {
+            kall(p, tikk, "OnTick", "ModA a.lua:1", 1_000_000);
+            kall(p, tikk, "OnTick", "ModB b.lua:5", 100_000);
+        }
+        kall(p, kommando, "OnClientCommand", "ModA a.lua:1", 30_000_000); // den samme funksjonen på en annen hendelse
+        kall(p, kommando, "OnClientCommand", "ModC c.lua:9", 2_000_000);
+        Profil.Minutt m = p.minutt(61_000);
+        lik(1_000L, m.fraMs());
+        lik(61_000L, m.tilMs());
+        lik(22L, m.kall());
+        lik(10_000_000L + 1_000_000L + 30_000_000L + 2_000_000L, m.luaNs());
+        lik(4, m.dyrest().size());
+        lik("OnClientCommand", m.dyrest().get(0).hendelse());
+        lik(new Profil.Funksjon("ModA", "a.lua", 1), m.dyrest().get(0).funksjon());
+        lik("OnTick", m.dyrest().get(1).hendelse());
+        lik(10L, m.dyrest().get(1).kall());
+        lik(1_000_000L, m.dyrest().get(1).maksNs());
+        lik(new Profil.Funksjon("ModC", "c.lua", 9), m.dyrest().get(2).funksjon());
+        // Tellingen begynner på nytt.
+        Profil.Minutt neste = p.minutt(121_000);
+        lik(61_000L, neste.fraMs());
+        lik(0, neste.dyrest().size());
+        lik(0L, neste.kall());
+    }
+
+    static void prøveProfilenGirHøystTjueOgFårEnTekstMedRareTegn() {
+        var p = profil();
+        Object h = new Object();
+        p.på(true, 0);
+        for (int i = 1; i <= 30; i++) {
+            kall(p, h, "OnTick", "Mod f" + i + ".lua:" + i, i * 1_000L);
+        }
+        kall(p, h, "On\"Rar\nHendelse\\", "Mod rar.lua:2", 5);
+        Profil.Minutt m = p.minutt(60_000);
+        lik(Profil.FLEST, m.dyrest().size());
+        lik(30, m.dyrest().get(0).funksjon().linje());
+        String json = m.json();
+        sant(json.startsWith("{\"fra\":0,\"til\":60000,\"kall\":31,"), json);
+        sant(json.contains("\"hendelse\":\"OnTick\",\"mod\":\"Mod\",\"fil\":\"f30.lua\",\"linje\":30,\"kall\":1,\"ms\":0.030,"), json);
+        sant(!json.contains("\n"), "ingen linjeskift");
+    }
+
+    static void prøveProfilenAvTellerIngenting() {
+        var p = profil();
+        Object h = new Object();
+        Object t = p.før(h, "OnTick", "Mod a.lua:1");
+        sant(t != null, "kallet går");
+        p.etter(t, 5_000);
+        p.hendelse(Profil.TIKK, 0);
+        p.hendelse(Profil.TIKK, 900_000_000L);
+        Profil.Minutt m = p.minutt(60_000);
+        lik(0L, m.kall());
+        lik(0, m.tikk());
+        lik(0, m.dyrest().size());
+    }
+
+    static void prøveTikkeneMåles() {
+        var p = profil();
+        p.på(true, 0);
+        long ns = 0;
+        p.hendelse(Profil.TIKK, ns);
+        for (int i = 0; i < 9; i++) {
+            ns += 100_000_000L;
+            p.hendelse(Profil.TIKK, ns);
+        }
+        ns += 450_000_000L;
+        p.hendelse(Profil.TIKK, ns); // et tregt tikk
+        p.hendelse("OnTick", ns + 1); // andre hendelser teller ikke
+        Profil.Minutt m = p.minutt(60_000);
+        lik(10, m.tikk());
+        lik(450_000_000L, m.tikkMaksNs());
+        lik(1, m.tregeTikk());
+        // Det første tikket etter et nytt minutt måler ikke fra et gammelt tikk.
+        p.hendelse(Profil.TIKK, ns + 10_000_000_000L);
+        lik(0, p.minutt(120_000).tikk());
+    }
+
+    static void prøveHoppLinjenLesesBareMedGrunn() {
+        var h = Profil.Hopp.tolk("OnTick ZombieMod client/Horde.lua:42 # Går gjennom alle zombiene hvert tikk; vi har ingen.");
+        lik(new Profil.Hopp("OnTick", "ZombieMod", "client/Horde.lua", 42,
+                "Går gjennom alle zombiene hvert tikk; vi har ingen."), h);
+        lik("OnTick ZombieMod client/Horde.lua:42 # Går gjennom alle zombiene hvert tikk; vi har ingen.", h.somLinje());
+        lik(null, Profil.Hopp.tolk("OnTick ZombieMod client/Horde.lua:42"));
+        lik(null, Profil.Hopp.tolk("OnTick ZombieMod client/Horde.lua:42 #   "));
+        lik(null, Profil.Hopp.tolk("OnTick client/Horde.lua:42 # mangler moden"));
+        lik(null, Profil.Hopp.tolk("OnTick ZombieMod client/Horde.lua # mangler linjen"));
+        lik(null, Profil.Hopp.tolk("OnTick ZombieMod client/Horde.lua:x # ikke et tall"));
+        lik(null, Profil.Hopp.tolk(null));
+    }
+
+    static void prøveHendelserIListenHoppesOverOgTelles() {
+        var p = profil();
+        Object h = new Object();
+        // Listen gjelder også når profileren står av.
+        var tatt = p.hopp(java.util.Arrays.asList(Profil.Hopp.tolk("OnTick ZombieMod z.lua:4 # zombier"), null));
+        lik(1, tatt.size());
+        lik(null, p.før(h, "OnTick", "ZombieMod z.lua:4"));
+        lik(null, p.før(h, "OnTick", "zombiemod z.lua:4")); // moden med små bokstaver er den samme
+        sant(p.før(h, "OnTick", "ZombieMod z.lua:5") != null, "en annen linje kalles");
+        sant(p.før(new Object(), "OnPlayerUpdate", "ZombieMod z.lua:4") != null, "en annen hendelse kalles");
+        p.på(true, 0);
+        lik(null, p.før(h, "OnTick", "ZombieMod z.lua:4"));
+        lik(1L, p.minutt(60_000).hoppet());
+        // En ny liste uten linjen: funksjonen kalles igjen.
+        p.hopp(java.util.List.of());
+        sant(p.før(h, "OnTick", "ZombieMod z.lua:4") != null, "kalles igjen");
+        // Høyst FLEST_HOPP linjer.
+        var mange = new java.util.ArrayList<Profil.Hopp>();
+        for (int i = 0; i < Profil.FLEST_HOPP + 5; i++) {
+            mange.add(new Profil.Hopp("OnTick", "M", "f.lua", i, "grunn"));
+        }
+        lik(Profil.FLEST_HOPP, p.hopp(mange).size());
+    }
+
+    static void prøveProfilenFraLuaHosSpillerenOgLåstPåServeren() {
+        // Hos spilleren: modet slår den på og henter minuttet.
+        lik(null, KnoxLifeJava.profilMinutt());
+        lik(true, KnoxLifeJava.profil(true));
+        sant(KnoxLifeJava.profilMinutt().startsWith("{\"fra\":"), "minuttet");
+        lik(1.0, KnoxLifeJava.hopp("OnTick M f.lua:1 # grunn\nikke en linje\n"));
+        lik("OnTick M f.lua:1 # grunn\n", KnoxLifeJava.hoppListe());
+        lik(true, KnoxLifeJava.profil(false));
+        lik(0.0, KnoxLifeJava.hopp(null));
+        // Serveren låser: Lua kan ikke endre noe.
+        Profil.SPILLET.lås();
+        Profil.SPILLET.på(true, 0);
+        lik(false, KnoxLifeJava.profil(false));
+        sant(Profil.SPILLET.på(), "står på");
+        lik(null, KnoxLifeJava.profilMinutt());
+        lik(-1.0, KnoxLifeJava.hopp("OnTick M f.lua:1 # grunn"));
+    }
 }

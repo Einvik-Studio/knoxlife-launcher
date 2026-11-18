@@ -77,6 +77,18 @@ screen to stop. Nothing happens if you were kicked or banned, or on any other se
 To join again, the game uses the login it already has in memory from when you joined (the password as the game stores
 it after hashing). It is never written to disk or to any log.
 
+When staff send you to the Knox Life test server, the game goes to the main menu and joins it the same way. It only
+ever goes to servers listed in the launcher's signed manifest.
+
+## Performance
+
+The agent can time the Lua functions that mods run on game events, to find what makes the game slow. On your PC it is
+off. Staff can turn it on for a few minutes when you report lag; it then records which mod file and line took how long
+and how many frames were slow – nothing about you, your folders or your PC – and the mod sends that to the server.
+
+The server can also give the game a list of event functions to skip, for mod functions that only matter with zombies.
+Every entry names the mod, the file and the line, with the reason.
+
 ## Building and testing
 
 ```sh
