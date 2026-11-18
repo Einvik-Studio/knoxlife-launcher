@@ -27,7 +27,7 @@ const IKKE_LASTET =
 
 const KO_TEKST = (plass, av) =>
   `The server is full. You are number ${plass} of ${av} in line – Knox Life starts by itself when it is your turn. Keep this window open.`;
-const DIN_TUR = "It's your turn! Knox Life is starting – join the server within 5 minutes, or your place goes to the next in line.";
+const DIN_TUR = "It's your turn! Knox Life is starting and joins the server by itself. Your place is held for 5 minutes.";
 const KO_SLUTT = {
   koen_er_full: "The line is full right now. Try again in a few minutes.",
   nede: "The server is restarting. Try again in a few minutes.",
