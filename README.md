@@ -36,6 +36,8 @@ reserved (see [LICENSE](LICENSE)).
 - Send data about you or your PC anywhere. The error report is only copied when you press "Copy report", and you paste
   it yourself.
 - Replace or keep any of the game's files.
+- Load anything from the internet into the window. The news comes inside the signed manifest and is shown as plain
+  text.
 
 To remove everything: uninstall the launcher. The game folder is untouched while the game is not running. "Restore game
 files" in Details, or Steam's "Verify integrity of game files", puts back anything left behind.
@@ -44,6 +46,7 @@ files" in Details, or Steam's "Verify integrity of game files", puts back anythi
 
 | Folder | What |
 |---|---|
+| `launcher/app` | The launcher's window (Tauri): Play, the news, the status line and Details. It only shows what the core does and calls it |
 | `launcher/kjerne` | The launcher's core, without a window or network: finding the game, the manifest, the version check, the download check, adding and removing the patch, and watching the game |
 | `launcher/knoxctl` | The same steps on the command line, for testing and troubleshooting |
 | `java/agent` | The Java agent (`knoxlife-agent.jar`): starts Mixin with our Java mods before the game's classes load, writes the stamp the launcher waits for, reads the travel ticket, and makes the anti-cheat report the server checks at login |
@@ -64,6 +67,7 @@ characters, with **file names only – never folder paths**, so nothing about yo
 cd launcher
 cargo test
 cargo build --release -p knoxctl
+cargo run -p knoxlife-launcher   # the window; on Linux it needs WebKitGTK 4.1 (libwebkit2gtk-4.1-dev)
 
 java/agent/bygg.sh   # JDK 21+, curl and sha256sum (Git Bash on Windows)
 ```

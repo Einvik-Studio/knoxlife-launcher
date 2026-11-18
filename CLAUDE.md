@@ -9,6 +9,7 @@ repoet `zomboid-rp`, og reglene der gjelder også her – med ett tillegg:
   Java-modene ligger i `zomboid-rp`, aldri her.
 - Aldri spillets egne filer (`projectzomboid.jar` eller utdrag av spillets kode) i repoet.
 - Tekst spillerne ser, er på engelsk (også `README.md`). Kommentarer og navn i koden på norsk.
-- Før hver commit: `cd launcher && cargo test && cargo clippy --all-targets`, og `java/agent/bygg.sh` når `java/` er
-  endret. GitHub kjører det samme på Windows, Linux og Mac (`.github/workflows/prover.yml`).
+- Før hver commit: `cd launcher && cargo test && cargo clippy --all-targets`, det samme med `-p knoxlife-launcher` når
+  vinduet (`launcher/app/`) er endret (på Linux trengs WebKitGTK 4.1), og `java/agent/bygg.sh` når `java/` er endret.
+  GitHub kjører det samme på Windows, Linux og Mac (`.github/workflows/prover.yml`).
 - `main` endres bare via PR, som i de andre repoene.

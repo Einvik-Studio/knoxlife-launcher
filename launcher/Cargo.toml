@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["kjerne", "knoxctl"]
+members = ["kjerne", "knoxctl", "app"]
+# Vinduet (Tauri) trenger WebKitGTK på Linux, så det bygges i en egen jobb: `cargo build -p knoxlife-launcher`.
+default-members = ["kjerne", "knoxctl"]
 
 [workspace.package]
 version = "0.1.0"

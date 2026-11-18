@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "vinduet",
+  "description": "Det vinduet trenger: flytte, minimere og lukke seg selv. Alt annet går gjennom launcherens egne kommandoer.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging"
+  ]
+}
