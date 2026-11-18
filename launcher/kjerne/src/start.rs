@@ -1,7 +1,7 @@
 //! Starte spillet og følge det til det avsluttes (3.2 punkt 8–12 i systemdokumentet).
 //!
-//! - **Billetten** (`Zomboid/KnoxLife/reise.txt`): serverens adresse og en engangsbillett. Agenten leser den ved oppstart,
-//!   kobler rett til serveren og sletter den.
+//! - **«Play» rett inn** (`Zomboid/KnoxLife/reise.txt`): navnet på serveren i listen under (`server=hoved`). Agenten
+//!   leser filen ved oppstart, sletter den og kobler til fra hovedmenyen med brukernavnet den husker – uten passord.
 //! - **Serverne** (`Zomboid/KnoxLife/servere.txt`): Knox Lifes servere fra det signerte manifestet, `navn=adresse:port`.
 //!   Agenten sender spillet bare til dem (J5, testserveren).
 //! - **Stempelet** (`Zomboid/KnoxLife/stempel.txt`): agenten skriver at den er lastet, med byggenummeret.
@@ -59,28 +59,20 @@ pub fn steam_kommando(plattform: Plattform, steam: Option<&Path>, steam_i_path: 
     }
 }
 
-// ---------- billetten ----------
+// ---------- «Play» rett inn ----------
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Billett {
-    pub adresse: String,
-    pub port: u16,
-    /// Engangsbilletten fra tjeneren. Bare gyldig i 10 minutter og bare for denne Steam-kontoen.
-    pub billett: String,
-}
-
-pub fn billett_sti(knox: &Path) -> PathBuf {
+pub fn rett_inn_sti(knox: &Path) -> PathBuf {
     knox.join("reise.txt")
 }
 
-/// Skriver billetten. Linjene er `nøkkel=verdi`, ASCII, så Java leser dem likt på alle PC-er.
-pub fn skriv_billett(knox: &Path, b: &Billett) -> Resultat<()> {
-    let ren = |s: &str| s.chars().filter(|c| c.is_ascii_graphic()).collect::<String>();
+/// Skriver navnet på serveren «Play» skal rett inn på (`hoved`), som agenten slår opp i `servere.txt`. Bare navnet,
+/// aldri en adresse: agenten kobler bare til servere fra det signerte manifestet.
+pub fn skriv_rett_inn(knox: &Path, server: &str) -> Resultat<()> {
+    let navn: String = server.chars().filter(|c| c.is_ascii_lowercase()).take(20).collect();
     fs::create_dir_all(knox)?;
-    let tekst = format!("adresse={}\nport={}\nbillett={}\n", ren(&b.adresse), b.port, ren(&b.billett));
     let tmp = knox.join("reise.txt.tmp");
-    fs::write(&tmp, tekst)?;
-    fs::rename(tmp, billett_sti(knox))?;
+    fs::write(&tmp, format!("server={navn}\n"))?;
+    fs::rename(tmp, rett_inn_sti(knox))?;
     Ok(())
 }
 
@@ -204,12 +196,12 @@ mod prøver {
     }
 
     #[test]
-    fn billetten_er_ren_ascii() {
+    fn rett_inn_er_bare_navnet() {
         let m = Mappe::ny();
-        let b = Billett { adresse: "play.example.invalid".into(), port: 16261, billett: "abc 123\nport=1".into() };
-        skriv_billett(m.sti(), &b).unwrap();
-        let tekst = fs::read_to_string(billett_sti(m.sti())).unwrap();
-        assert_eq!(tekst, "adresse=play.example.invalid\nport=16261\nbillett=abc123port=1\n");
+        skriv_rett_inn(m.sti(), "hoved").unwrap();
+        assert_eq!(fs::read_to_string(rett_inn_sti(m.sti())).unwrap(), "server=hoved\n");
+        skriv_rett_inn(m.sti(), "Hoved\nserver=x:1").unwrap();
+        assert_eq!(fs::read_to_string(rett_inn_sti(m.sti())).unwrap(), "server=ovedserverx\n");
     }
 
     #[test]
@@ -221,7 +213,7 @@ mod prøver {
         man.testserver = Some(crate::manifest::Server { adresse: "10.0.0.6".into(), port: 16271 });
         skriv_servere(m.sti(), &man).unwrap();
         assert_eq!(fs::read_to_string(servere_sti(m.sti())).unwrap(), "hoved=play.example.invalid:16261\ntest=10.0.0.6:16271\n");
-        // En hovedadresse agenten ikke godtar, står ikke med (den brukes bare til billetten).
+        // En hovedadresse agenten ikke godtar, står ikke med.
         man.server.adresse = "[::1]".into();
         skriv_servere(m.sti(), &man).unwrap();
         assert_eq!(fs::read_to_string(servere_sti(m.sti())).unwrap(), "test=10.0.0.6:16271\n");

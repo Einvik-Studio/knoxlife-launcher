@@ -9,7 +9,7 @@
 //! 4. [`porten::sjekk`] – spillets `projectzomboid.jar` må være nøyaktig den patchen er laget for.
 //! 5. [`nedlasting`] – filene i patchen sjekkes mot SHA-256 i manifestet.
 //! 6. [`patch::legg_inn`] – kopi, merke, så endringen.
-//! 7. [`start`] – billetten, [`ytelsesmodus`] når spilleren har slått den på, Steam, stempelet og vakten til spillet
+//! 7. [`start`] – «Play» rett inn, [`ytelsesmodus`] når spilleren har slått den på, Steam, stempelet og vakten til spillet
 //!    avsluttes.
 //! 8. [`ytelsesmodus::sett_tilbake`] og [`patch::sett_tilbake`].
 //!

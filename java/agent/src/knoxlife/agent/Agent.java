@@ -8,7 +8,7 @@ import java.time.Instant;
 /**
  * Knox Life-agenten. Java laster den før spillet ({@code -javaagent:} først i spillets valg, lagt inn av launcheren).
  *
- * <p>I denne rekkefølgen: juksesperren ser gjennom Java-en, billetten og listen over serverne hentes, Mixin startes med
+ * <p>I denne rekkefølgen: juksesperren ser gjennom Java-en, listen over serverne og «Play» rett inn hentes, Mixin startes med
  * Java-modene våre, og stempelet skrives til slutt – så launcheren bare ser «lastet» når alt over gikk bra.
  */
 public final class Agent {
@@ -30,11 +30,14 @@ public final class Agent {
             KnoxLife.settFunn(Javavakt.funn(Javavakt.Inntrykk.herfra(egenJar())));
             KnoxLife.del("juksesperre");
             if (stempel != null) {
-                KnoxLife.settBillett(Billett.hent(stempel.resolveSibling("reise.txt"), Instant.now()));
+                KnoxLife.settMappe(stempel.getParent());
                 // J5: serverne launcheren kjenner. Uten listen kan spillet ikke gå over til testserveren.
                 Servere servere = Servere.les(stempel.resolveSibling("servere.txt"));
+                // «Play» rett inn (J2): serveren fra listen. Filen slettes uansett, så den aldri gjelder neste start.
+                String rettInn = RettInn.hent(stempel.resolveSibling(RettInn.FIL), Instant.now());
                 if (servere != null) {
                     KnoxLife.settServere(servere);
+                    KnoxLife.settRettInn(servere.finn(rettInn));
                     KnoxLife.del("reise");
                 }
             }

@@ -1,5 +1,8 @@
 package knoxlife.tilbake;
 
+import knoxlife.agent.Konto;
+import knoxlife.agent.KnoxLife;
+import knoxlife.agent.Servere;
 import knoxlife.agent.Tilbake;
 import se.krka.kahlua.vm.KahluaTable;
 import zombie.GameWindow;
@@ -19,6 +22,9 @@ import zombie.ui.UIElement;
  *
  * <p>J5 (launcher.md 3.6 punkt 3): {@link Tilbake#fraSpillet()} får innloggingen spillet har nå herfra, når modet sender
  * spilleren til testserveren – den samme veien gjennom hovedmenyen tar spillet dit.
+ *
+ * <p>J2 (launcher.md 3.7 punkt 3): «Play» rett inn starter den samme veien første gang hovedmenyen vises
+ * ({@link Tilbake#start}), og {@link #avvist(String)} tar imot serverens svar når innloggingen avvises.
  *
  * <p>Feiler noe her, stopper J6 for denne gangen og sier fra i konsollen – spillet går videre som uten Java-moden.
  */
@@ -74,6 +80,10 @@ public final class Spillet {
 
     /** {@code MainScreenState.update}, hvert bilde i hovedmenyen. */
     public static void iMenyen() {
+        Servere.Server rettInn = KnoxLife.taRettInn();
+        if (rettInn != null) {
+            Tilbake.SPILLET.start(nå(), rettInn, Konto.les(KnoxLife.mappe()));
+        }
         if (!Tilbake.SPILLET.iGang()) {
             return;
         }
@@ -101,6 +111,19 @@ public final class Spillet {
             }
         } catch (RuntimeException | LinkageError e) {
             stopp("i hovedmenyen", e);
+        }
+    }
+
+    /**
+     * {@code AccessDeniedPacket.processClientLoading}: serveren avviste innloggingen. Gir teksten spillet skal vise
+     * i stedet for sin egen, eller {@code null}.
+     */
+    public static String avvist(String grunn) {
+        try {
+            return Tilbake.SPILLET.avvist(nå(), grunn, innlogging());
+        } catch (RuntimeException | LinkageError e) {
+            stopp("ved avvisningen", e);
+            return grunn != null && grunn.startsWith(Tilbake.MERKE) ? grunn.substring(Tilbake.MERKE.length()) : null;
         }
     }
 

@@ -121,26 +121,48 @@ public final class Prover {
         sant(!Javavakt.erVår(tom.resolve("annen.jar").toString(), jar), "en annen fil");
     }
 
-    // ---------- billetten og stempelet ----------
+    // ---------- «Play» rett inn, brukernavnet og stempelet ----------
 
-    static void prøveBillettenLesesEnGangOgSlettes() throws Exception {
-        Path fil = tom.resolve("reise.txt");
-        Files.writeString(fil, "adresse=play.example.invalid\nport=16261\nbillett=abc123\n");
-        Billett b = Billett.hent(fil, Instant.now());
-        lik(new Billett("play.example.invalid", 16261, "abc123"), b);
+    static void prøveRettInnLesesEnGangOgSlettes() throws Exception {
+        Path fil = tom.resolve(RettInn.FIL);
+        Files.writeString(fil, "server=hoved\n");
+        lik("hoved", RettInn.hent(fil, Instant.now()));
         sant(!Files.exists(fil), "filen er slettet");
-        lik(null, Billett.hent(fil, Instant.now()));
-        sant(!b.toString().contains("abc123"), "billetten skrives aldri ut");
+        lik(null, RettInn.hent(fil, Instant.now()));
     }
 
-    static void prøveGammelEllerØdelagtBillettBrukesIkke() throws Exception {
-        Path fil = tom.resolve("reise.txt");
-        Files.writeString(fil, "adresse=a\nport=1\nbillett=b\n");
-        Files.setLastModifiedTime(fil, FileTime.from(Instant.now().minusSeconds(11 * 60)));
-        lik(null, Billett.hent(fil, Instant.now()));
-        sant(!Files.exists(fil), "en gammel billett slettes også");
-        lik(null, Billett.tolk("adresse=a\nport=99999\nbillett=b"));
-        lik(null, Billett.tolk("adresse=a\nport=1"));
+    static void prøveGammelEllerØdelagtRettInnBrukesIkke() throws Exception {
+        Path fil = tom.resolve(RettInn.FIL);
+        Files.writeString(fil, "server=hoved\n");
+        Files.setLastModifiedTime(fil, FileTime.from(Instant.now().minusSeconds(31 * 60)));
+        lik(null, RettInn.hent(fil, Instant.now()));
+        sant(!Files.exists(fil), "en gammel fil slettes også");
+        lik(null, RettInn.tolk("server=play.example.org:16261"));
+        lik(null, RettInn.tolk("adresse=play.example.org\nport=16261"));
+        lik(null, RettInn.tolk("server="));
+        lik("test", RettInn.tolk("# fra launcheren\r\nserver=test\r\n"));
+    }
+
+    static void prøveKontoenHuskesOgUkjentUtenFil() throws Exception {
+        lik(Konto.UKJENT, Konto.les(tom));
+        lik(Konto.UKJENT, Konto.les(null));
+        sant(Konto.skriv(tom, "mary_lou.93"), "skrives");
+        lik("mary_lou.93", Konto.les(tom));
+        lik("mary_lou.93\n", Files.readString(tom.resolve(Konto.FIL)));
+        sant(Konto.skriv(tom, "mary_lou.93"), "det samme igjen");
+        sant(Konto.skriv(tom, "Joe-93"), "et nytt");
+        lik("Joe-93", Konto.les(tom));
+        // Aldri noe annet enn et brukernavn fra Knox Life – heller ikke plassholderen.
+        sant(!Konto.skriv(tom, Konto.UKJENT), "plassholderen");
+        sant(!Konto.skriv(tom, "ab"), "for kort");
+        sant(!Konto.skriv(tom, "a".repeat(21)), "for langt");
+        sant(!Konto.skriv(tom, "joe\n93"), "linjeskift");
+        sant(!Konto.skriv(tom, "../x"), "sti");
+        sant(!Konto.skriv(null, "Joe-93"), "uten mappe");
+        lik("Joe-93", Konto.les(tom));
+        Files.writeString(tom.resolve(Konto.FIL), "ikke et navn\n");
+        lik(Konto.UKJENT, Konto.les(tom));
+        sant(!Konto.gyldig(Konto.UKJENT), "plassholderen er aldri et brukernavn");
     }
 
     static void prøveStempeletOkOgFeil() throws Exception {
@@ -447,6 +469,163 @@ public final class Prover {
         lik(false, KnoxLifeJava.reise("test"));
         lik(false, KnoxLifeJava.reise(null));
         lik(null, Tilbake.fraSpillet()); // knoxlife.tilbake.Spillet er ikke bygget inn i prøvene
+    }
+
+    // ---------- J2: «Play» rett inn og innloggingen med Steam ----------
+
+    static final Servere.Server HOVED = new Servere.Server("hoved", "10.0.0.5", 16261);
+
+    static void prøveStartGårRettInnMedBrukernavnetOgUtenPassord() {
+        var t = new Tilbake();
+        sant(!t.start(0, null, "ola"), "uten server");
+        sant(t.start(0, HOVED, "ola"), "start");
+        lik(Tilbake.Fase.MENYEN, t.fase());
+        lik(Tilbake.START, t.skjermtekst());
+        var i = t.innlogging();
+        lik("ola", i.bruker());
+        lik("", i.passord());
+        lik("10.0.0.5", i.ip());
+        lik("16261", i.port());
+        lik("", i.serverpassord());
+        lik("Knox Life", i.servernavn());
+        lik(false, i.steamRelay());
+        lik(1, i.autentisering());
+        sant(!t.start(0, HOVED, "ola"), "bare én gang om gangen");
+        // Hovedmenyen: spillet kobler til så snart den er fremme.
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(500, LASTER).handling());
+        var s = t.iMenyen(1_000, MENYEN);
+        lik(Tilbake.Handling.KOBLE_TIL, s.handling());
+        lik(Tilbake.START + " Connecting (attempt 1)…", s.tekst());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(2_000, KOBLER).handling());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(9_000, INNE).handling());
+        lik(Tilbake.Fase.FERDIG, t.fase());
+        t.påKnoxLife();
+        // Et brudd etterpå er et vanlig brudd, ikke en ny start.
+        sant(t.brudd(60_000, null, inn()), "brudd");
+        lik(Tilbake.BRUDD, t.skjermtekst());
+    }
+
+    static void prøveStartUtenKjentBrukernavnBrukerPlassholderen() {
+        var t = new Tilbake();
+        t.start(0, HOVED, Konto.UKJENT);
+        lik(Konto.UKJENT, t.innlogging().bruker());
+        var u = new Tilbake();
+        u.start(0, HOVED, "ikke et navn");
+        lik(Konto.UKJENT, u.innlogging().bruker());
+        var v = new Tilbake();
+        v.start(0, HOVED, null);
+        lik(Konto.UKJENT, v.innlogging().bruker());
+    }
+
+    static void prøveServerenGirBrukernavnetOgSpilletKoblerTilMedDet() {
+        // En ny PC: agenten vet ikke brukernavnet, og serveren svarer med det Steam-kontoen har.
+        var t = new Tilbake();
+        t.start(0, HOVED, Konto.UKJENT);
+        t.iMenyen(1_000, MENYEN);
+        lik(Tilbake.kontoTekst("ola"), t.avvist(1_500, Tilbake.KONTO + "ola", null));
+        lik("This Steam account plays as ola. Logging in as ola…", Tilbake.kontoTekst("ola"));
+        lik("ola", t.innlogging().bruker());
+        lik("", t.innlogging().passord());
+        lik("10.0.0.5", t.innlogging().ip());
+        // Spillet viser teksten og er ferdig med forsøket: det neste kommer om 2 sekunder, ikke 15.
+        var s = t.iMenyen(1_600, FEILET);
+        lik(Tilbake.Handling.VIS_TEKST, s.handling());
+        lik(Tilbake.kontoTekst("ola") + " Next try in 2 s.", s.tekst());
+        lik(Tilbake.Handling.VIS_TEKST, t.iMenyen(3_000, FEILET).handling());
+        lik(Tilbake.Handling.KOBLE_TIL, t.iMenyen(3_600, FEILET).handling());
+        lik(2, t.forsøk());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(4_000, INNE).handling());
+        lik(Tilbake.Fase.FERDIG, t.fase());
+    }
+
+    static void prøveBrukernavnetByttesHøystToGanger() {
+        var t = new Tilbake();
+        t.start(0, HOVED, "ola");
+        t.iMenyen(1_000, MENYEN);
+        lik(Tilbake.kontoTekst("kari"), t.avvist(1_100, Tilbake.KONTO + "kari", null));
+        t.iMenyen(1_200, FEILET);
+        lik(Tilbake.Handling.KOBLE_TIL, t.iMenyen(3_200, FEILET).handling());
+        lik(Tilbake.kontoTekst("ola"), t.avvist(3_300, Tilbake.KONTO + "ola", null));
+        t.iMenyen(3_400, FEILET);
+        lik(Tilbake.Handling.KOBLE_TIL, t.iMenyen(5_400, FEILET).handling());
+        // Den tredje gangen stopper det: spilleren får beskjed om brukernavnet.
+        lik(Tilbake.annetNavn("kari"), t.avvist(5_500, Tilbake.KONTO + "kari", null));
+        lik(Tilbake.Fase.AVBRUTT, t.fase());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(6_000, FEILET).handling());
+        // Et brukernavn Knox Life aldri lager, tas ikke imot.
+        var u = new Tilbake();
+        u.start(0, HOVED, "ola");
+        u.iMenyen(1_000, MENYEN);
+        lik("Knox Life did not accept the login.", u.avvist(1_100, Tilbake.KONTO + "x\ny", null));
+        lik(Tilbake.Fase.AVBRUTT, u.fase());
+    }
+
+    static void prøveSpillerenKobletTilSelvMedEtAnnetNavn() {
+        // Fra serverlisten, uten «Play»: serveren gir brukernavnet, og spillet tar det derfra.
+        var t = new Tilbake();
+        var fra = new Tilbake.Innlogging("feil", "noe", "10.0.0.5", "", "16261", "", "Knox Life", true, 1);
+        lik(Tilbake.kontoTekst("ola"), t.avvist(0, Tilbake.KONTO + "ola", fra));
+        lik(Tilbake.Fase.KOBLER, t.fase());
+        lik("ola", t.innlogging().bruker());
+        lik("", t.innlogging().passord());
+        lik(true, t.innlogging().steamRelay());
+        t.iMenyen(100, FEILET);
+        lik(Tilbake.Handling.KOBLE_TIL, t.iMenyen(2_100, FEILET).handling());
+        lik(2, t.forsøk());
+        // Uten innloggingen fra spillet kan det ikke kobles til: spilleren får beskjed om brukernavnet.
+        var u = new Tilbake();
+        lik(Tilbake.annetNavn("ola"), u.avvist(0, Tilbake.KONTO + "ola", null));
+        lik(Tilbake.Fase.AV, u.fase());
+    }
+
+    static void prøveAvvisningStopperForsøkeneUtenomIgjen() {
+        // Ikke på whitelisten: serverens tekst vises, og det prøves ikke igjen hvert 15. sekund.
+        var t = new Tilbake();
+        t.start(0, HOVED, Konto.UKJENT);
+        t.iMenyen(1_000, MENYEN);
+        lik("This Steam account is not on the Knox Life whitelist. Apply on the Knox Life website.",
+                t.avvist(1_100, Tilbake.MERKE + "This Steam account is not on the Knox Life whitelist. Apply on the Knox Life website.", null));
+        lik(Tilbake.Fase.AVBRUTT, t.fase());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(20_000, FEILET).handling());
+        // Spillets egne grunner (utestengt, feil versjon): spillet viser sin tekst, og forsøkene stopper.
+        var u = new Tilbake();
+        u.påKnoxLife();
+        u.brudd(0, null, inn());
+        u.tilMenyen(3_000);
+        u.iMenyen(3_100, MENYEN);
+        lik(null, u.avvist(3_200, "Banned", null));
+        lik(Tilbake.Fase.AVBRUTT, u.fase());
+        // Kontoen lages nå: teksten står til neste forsøk, som kommer som før.
+        var v = new Tilbake();
+        v.start(0, HOVED, "ola");
+        v.iMenyen(1_000, MENYEN);
+        String igjen = "Your account is being set up. Try again in a minute.";
+        lik(igjen, v.avvist(1_100, Tilbake.IGJEN + igjen, null));
+        lik(Tilbake.Fase.KOBLER, v.fase());
+        var s = v.iMenyen(1_200, FEILET);
+        lik(igjen + " Next try in 15 s.", s.tekst());
+        lik(Tilbake.Handling.KOBLE_TIL, v.iMenyen(16_200, FEILET).handling());
+        lik(Tilbake.START + " Next try in 15 s.", v.iMenyen(16_300, FEILET).tekst());
+        // Utenom et forsøk (en annen server, eller spilleren koblet til selv) viser spillet sine egne grunner som før.
+        var w = new Tilbake();
+        lik(null, w.avvist(0, "Banned", null));
+        lik(null, w.avvist(0, null, null));
+        lik("Knox Life text", w.avvist(0, Tilbake.MERKE + "Knox Life text", null));
+        lik(Tilbake.Fase.AV, w.fase());
+    }
+
+    static void prøveStartGirOppEtterFristen() {
+        var t = new Tilbake();
+        t.start(0, HOVED, "ola");
+        t.iMenyen(1_000, MENYEN);
+        var s = t.iMenyen(Tilbake.FRIST_MS, FEILET);
+        lik(Tilbake.Fase.GITT_OPP, t.fase());
+        lik(Tilbake.START_GITT_OPP, s.tekst());
+        // Spilleren kommer inn selv fra serverlisten: ferdig, og et brudd senere er et vanlig brudd.
+        t.påKnoxLife();
+        lik(Tilbake.Fase.FERDIG, t.fase());
+        sant(t.brudd(Tilbake.FRIST_MS + 60_000, null, inn()), "vanlig brudd");
+        lik(Tilbake.BRUDD, t.skjermtekst());
     }
 
     static void prøveTilbakeViserAldriPassordet() {

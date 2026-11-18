@@ -16,6 +16,11 @@ import java.util.function.Supplier;
  * <p>J5, overgangen til testserveren (launcher.md 3.6 punkt 3): {@link #reise} gir et annet mål for den samme veien –
  * modet sender spillet til hovedmenyen, og derfra kobler det seg til serveren fra launcherens liste ({@link Servere})
  * med den samme innloggingen, i opptil {@link #REISE_FRIST_MS} (så lenge billetten gjelder).
+ *
+ * <p>J2, «Play» rett inn (launcher.md 3.7 punkt 3): {@link #start} gir den samme veien når spillet starter – fra
+ * hovedmenyen til serveren launcheren valgte, med brukernavnet fra {@link Konto} og uten passord. Serveren slipper inn
+ * på Steam-ID-en; har Steam-kontoen et annet brukernavn, svarer den med det ({@link #avvist}), og spillet kobler til
+ * igjen med det.
  */
 public final class Tilbake {
     /** Så lenge skjermen ved bruddet vises før spillet går til hovedmenyen selv. */
@@ -33,6 +38,31 @@ public final class Tilbake {
     public static final String GITT_OPP = "Knox Life is not back yet. Join again from the server list in a few minutes.";
     /** Så lenge spillet prøver å komme inn på serveren det reiser til (billetten gjelder så lenge, tjener/reise.mjs). */
     public static final long REISE_FRIST_MS = 10 * 60_000;
+
+    /** Det som vises når «Play» går rett inn på Knox Life. */
+    public static final String START = "Joining Knox Life – connecting automatically.";
+    /** Det som vises når Knox Life ikke svarte i tide etter «Play». */
+    public static final String START_GITT_OPP = "Knox Life is not answering. Join from the server list in a few minutes.";
+    /** Grunnen fra serveren når Steam-kontoen har et annet brukernavn: brukernavnet står etter. */
+    public static final String KONTO = "KnoxLifeKonto##";
+    /** Serverens egen tekst ved en avvisning: spillet viser den, og det prøves ikke igjen. */
+    public static final String MERKE = "KnoxLife##";
+    /** Serverens egen tekst når det går om litt (kontoen lages, karakteren hentes fram): det prøves igjen. */
+    public static final String IGJEN = "KnoxLifeIgjen##";
+    /** Ventetiden før spillet kobler til igjen med brukernavnet serveren ga (den gamle forbindelsen lukkes først). */
+    public static final long KONTO_VENT_MS = 2_000;
+    /** Høyst så mange ganger per start bytter serveren brukernavnet – så to servere aldri sender spillet frem og tilbake. */
+    public static final int FLEST_BYTTER = 2;
+
+    /** Det som vises når serveren har gitt brukernavnet, og spillet kobler til med det. */
+    public static String kontoTekst(String navn) {
+        return "This Steam account plays as " + navn + ". Logging in as " + navn + "…";
+    }
+
+    /** Det som vises når serveren har gitt brukernavnet, men spillet ikke kobler til selv. */
+    public static String annetNavn(String navn) {
+        return "This Steam account plays as " + navn + ". Log in with that username.";
+    }
 
     /** Det som vises på vei til en annen av Knox Lifes servere. */
     public static String reisetekst(Servere.Server mål) {
@@ -121,6 +151,14 @@ public final class Tilbake {
     private int forsøk;
     /** Serveren spillet reiser til (J5), eller {@code null} når det skal tilbake til den samme. */
     private Servere.Server reise;
+    /** «Play» rett inn (J2): spillet er på vei inn fra starten, ikke tilbake etter et brudd. */
+    private boolean start;
+    /** Hvor mange ganger serveren har gitt et annet brukernavn siden starten. */
+    private int bytter;
+    /** Neste forsøk kommer straks ({@link #KONTO_VENT_MS}), ikke etter {@link #MELLOM_FORSØK_MS}. */
+    private boolean straks;
+    /** Serverens tekst fra forrige forsøk, som står til det neste ({@link #IGJEN}). */
+    private String sist;
 
     /** Modet er i spillet på Knox Life. Kalles ved hver innlogging, også etter en ny tilkobling. */
     public synchronized void påKnoxLife() {
@@ -149,6 +187,7 @@ public final class Tilbake {
             return true;
         }
         reise = null;
+        start = false;
         // Spillet gir en grunn bare når serveren kaster spilleren ut. Har serveren sagt fra om omstarten, gjelder
         // også den grunnen spillet får når serveren stopper.
         boolean vår = omstart || grunn == null || grunn.isBlank();
@@ -168,6 +207,9 @@ public final class Tilbake {
     }
 
     public synchronized String skjermtekst() {
+        if (start) {
+            return START;
+        }
         if (reise != null) {
             return reisetekst(reise);
         }
@@ -183,6 +225,7 @@ public final class Tilbake {
             return false;
         }
         reise = mål;
+        start = false;
         // Serveren fra launcherens liste, direkte (ikke gjennom Steam), og uten serverpassord: whitelisten slipper inn.
         innlogging = new Innlogging(fra.bruker(), fra.passord(), mål.adresse(), "", String.valueOf(mål.port()), "",
                 mål.tittel(), false, fra.autentisering());
@@ -193,11 +236,108 @@ public final class Tilbake {
         return true;
     }
 
+    /**
+     * J2, «Play» rett inn: koble til serveren {@code mål} fra launcherens liste med brukernavnet {@code bruker} (fra
+     * {@link Konto}) og uten passord, når hovedmenyen er fremme. {@code false} når noe annet alt er i gang.
+     */
+    public synchronized boolean start(long nå, Servere.Server mål, String bruker) {
+        if (mål == null || iGang()) {
+            return false;
+        }
+        reise = null;
+        start = true;
+        påKnoxLife = false;
+        omstart = false;
+        String navn = Konto.gyldig(bruker) ? bruker : Konto.UKJENT;
+        // Direkte (ikke gjennom Steam), uten serverpassord og uten passord: serveren slipper inn på Steam-ID-en.
+        innlogging = new Innlogging(navn, "", mål.adresse(), "", String.valueOf(mål.port()), "", mål.tittel(), false, 1);
+        bruddTid = nå;
+        forsøk = 0;
+        bytter = 0;
+        straks = false;
+        sist = null;
+        fase = Fase.MENYEN;
+        return true;
+    }
+
+    /**
+     * Serveren avviste innloggingen ({@code AccessDenied} hos spilleren) med {@code grunn}. Gir teksten spillet skal vise,
+     * eller {@code null} når spillet viser sin egen.
+     * <ul>
+     *   <li>{@link #KONTO}: Steam-kontoen har et annet brukernavn. Spillet kobler til igjen med det om
+     *       {@link #KONTO_VENT_MS} – også når spilleren selv koblet til fra serverlisten ({@code fra}, innloggingen
+     *       spillet har nå) – høyst {@link #FLEST_BYTTER} ganger.</li>
+     *   <li>{@link #IGJEN}: det går om litt; et forsøk som er i gang, prøver igjen som før.</li>
+     *   <li>Alt annet ({@link #MERKE} og spillets egne grunner): forsøkene stopper, og spillets skjerm viser grunnen.</li>
+     * </ul>
+     */
+    public synchronized String avvist(long nå, String grunn, Innlogging fra) {
+        if (grunn == null) {
+            return null;
+        }
+        boolean forsøker = fase == Fase.KOBLER || fase == Fase.VENTER;
+        if (grunn.startsWith(KONTO)) {
+            String navn = grunn.substring(KONTO.length());
+            if (!Konto.gyldig(navn)) {
+                if (forsøker) {
+                    ferdig(Fase.AVBRUTT);
+                }
+                return "Knox Life did not accept the login.";
+            }
+            return kontonavn(nå, navn, forsøker, fra) ? kontoTekst(navn) : annetNavn(navn);
+        }
+        if (grunn.startsWith(IGJEN)) {
+            String tekst = grunn.substring(IGJEN.length());
+            if (forsøker) {
+                sist = tekst;
+            }
+            return tekst;
+        }
+        if (forsøker) {
+            ferdig(Fase.AVBRUTT);
+        }
+        return grunn.startsWith(MERKE) ? grunn.substring(MERKE.length()) : null;
+    }
+
+    private boolean kontonavn(long nå, String navn, boolean forsøker, Innlogging fra) {
+        if (forsøker && innlogging != null) {
+            if (bytter >= FLEST_BYTTER) {
+                ferdig(Fase.AVBRUTT);
+                return false;
+            }
+        } else if (!iGang() && fra != null) {
+            // Spilleren koblet til selv (serverlisten) med et annet brukernavn: spillet tar det derfra.
+            innlogging = fra;
+            reise = null;
+            start = true;
+            bruddTid = nå;
+            forsøk = 1;
+            bytter = 0;
+            fase = Fase.KOBLER;
+        } else {
+            return false;
+        }
+        Innlogging i = innlogging;
+        innlogging = new Innlogging(navn, "", i.ip(), i.lokalIp(), i.port(), i.serverpassord(), i.servernavn(),
+                i.steamRelay(), i.autentisering());
+        bytter++;
+        sist = kontoTekst(navn);
+        if (fase == Fase.VENTER) {
+            neste = nå + KONTO_VENT_MS;
+        } else {
+            straks = true;
+        }
+        return true;
+    }
+
     private long frist() {
         return reise != null ? REISE_FRIST_MS : FRIST_MS;
     }
 
     private String gittOpp() {
+        if (start) {
+            return START_GITT_OPP;
+        }
         return reise != null ? reiseGittOpp(reise) : GITT_OPP;
     }
 
@@ -236,7 +376,8 @@ public final class Tilbake {
                     return new Steg(Handling.VIS_TEKST, gittOpp());
                 }
                 fase = Fase.VENTER;
-                neste = nå + MELLOM_FORSØK_MS;
+                neste = nå + (straks ? KONTO_VENT_MS : MELLOM_FORSØK_MS);
+                straks = false;
                 return venter(nå);
             }
             case VENTER -> {
@@ -265,20 +406,24 @@ public final class Tilbake {
     private void ferdig(Fase slutt) {
         fase = slutt;
         innlogging = null;
+        straks = false;
+        sist = null;
         if (slutt != Fase.GITT_OPP) {
             reise = null; // teksten etter fristen sier fortsatt hvor det gikk
+            start = false;
         }
     }
 
     private Steg kobleTil() {
         fase = Fase.KOBLER;
+        sist = null;
         forsøk++;
         return new Steg(Handling.KOBLE_TIL, skjermtekst() + " Connecting (attempt " + forsøk + ")…");
     }
 
     private Steg venter(long nå) {
         long sekunder = Math.max(1, (neste - nå + 999) / 1000);
-        return new Steg(Handling.VIS_TEKST, skjermtekst() + " Next try in " + sekunder + " s.");
+        return new Steg(Handling.VIS_TEKST, (sist != null ? sist : skjermtekst()) + " Next try in " + sekunder + " s.");
     }
 
     public synchronized Fase fase() {

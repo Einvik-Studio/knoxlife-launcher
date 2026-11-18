@@ -11,7 +11,7 @@ use crate::nedlasting::{self, Henter};
 use crate::patch::{self, Patch, AGENT_FIL};
 use crate::porten::{self, Svar};
 use crate::spillet::Spill;
-use crate::start::{self, Billett, Tilstand, Vakt};
+use crate::start::{self, Tilstand, Vakt};
 use crate::ytelsesmodus;
 use ed25519_dalek::VerifyingKey;
 use serde::Serialize;
@@ -79,8 +79,8 @@ pub struct Oppsett<'a> {
     pub reserve: Option<&'a Path>,
     /// Den offentlige nøkkelen manifestet er signert med. `None` i en prøvebygging: da kan ingenting sjekkes.
     pub nøkkel: Option<&'a VerifyingKey>,
-    /// Engangsbilletten fra tjeneren, når spillet skal rett inn på serveren.
-    pub billett: Option<&'a Billett>,
+    /// «Play» rett inn (3.7 punkt 3): spillet kobler seg selv til hovedserveren fra hovedmenyen.
+    pub rett_inn: bool,
     /// Ytelsesmodus (3.8 punkt 5): spilleren har slått den på under «Details».
     pub ytelsesmodus: bool,
 }
@@ -132,9 +132,8 @@ pub fn kjør(o: &Oppsett, nett: &dyn Nett, maskin: &dyn Maskin, steg: &mut dyn F
     // 4. Versjonsporten.
     let knox = start::knox_mappe(o.hjem);
     if porten::sjekk(o.spill, &m)? == Svar::Nødmodus {
-        if let Some(b) = o.billett {
-            start::skriv_billett(&knox, b)?;
-        }
+        // Uten patch er det ingen agent som kobler til: spilleren velger serveren selv.
+        let _ = std::fs::remove_file(start::rett_inn_sti(&knox));
         si(Steg::StarterSteam);
         maskin.start_steam()?;
         return Ok(Utfall::Nødmodus);
@@ -163,8 +162,8 @@ pub fn kjør(o: &Oppsett, nett: &dyn Nett, maskin: &dyn Maskin, steg: &mut dyn F
 
     // 8–11. Fra her settes spillet tilbake uansett hvordan det går.
     let spilt = (|| -> Resultat<bool> {
-        if let Some(b) = o.billett {
-            start::skriv_billett(&knox, b)?;
+        if o.rett_inn {
+            start::skriv_rett_inn(&knox, "hoved")?;
         }
         if o.ytelsesmodus {
             // Ytelsesmodus er bare en hjelp: går den ikke, startes spillet med spillerens egne verdier.
@@ -203,8 +202,8 @@ pub fn kjør(o: &Oppsett, nett: &dyn Nett, maskin: &dyn Maskin, steg: &mut dyn F
         Feil::SpillmappenBorte(_) | Feil::KunneIkkeSetteTilbake(_) => e,
         annet => Feil::KunneIkkeSetteTilbake(annet.to_string()),
     })?;
-    // Billetten er bare til denne starten.
-    let _ = std::fs::remove_file(start::billett_sti(&knox));
+    // «Play» rett inn gjelder bare denne starten (agenten sletter filen selv når den leser den).
+    let _ = std::fs::remove_file(start::rett_inn_sti(&knox));
     Ok(Utfall::Spilt { bygg: m.bygg, lastet: spilt? })
 }
 
@@ -344,7 +343,7 @@ mod prøver {
             hjem: &v.hjem,
             reserve: None,
             nøkkel: Some(&nøkkel),
-            billett: None,
+            rett_inn: false,
             ytelsesmodus,
         };
         let mut steg = Vec::new();
@@ -463,7 +462,7 @@ mod prøver {
             hjem: &v.hjem,
             reserve: None,
             nøkkel: None,
-            billett: None,
+            rett_inn: false,
             ytelsesmodus: false,
         };
         let svar = kjør(&o, &n, &maskin, &mut |_| {});
@@ -543,30 +542,40 @@ mod prøver {
     }
 
     #[test]
-    fn billetten_skrives_før_steam_og_fjernes_etterpå() {
+    fn rett_inn_skrives_før_steam_og_fjernes_etterpå() {
         let v = verden();
         let n = nett(&v, &manifest(12));
         let maskin = FalskMaskin::ny(&v);
         let nøkkel = v.nøkkel.verifying_key();
-        let billett = Billett { adresse: "play.example.invalid".into(), port: 16261, billett: "abc".into() };
         let o = Oppsett {
             spill: &v.spill,
             tilstand: &v.tilstand,
             hjem: &v.hjem,
             reserve: None,
             nøkkel: Some(&nøkkel),
-            billett: Some(&billett),
+            rett_inn: true,
             ytelsesmodus: false,
         };
         let knox = start::knox_mappe(&v.hjem);
-        let mut så_billetten = false;
+        let mut så = None;
         kjør(&o, &n, &maskin, &mut |s| {
             if s == Steg::Venter {
-                så_billetten = start::billett_sti(&knox).is_file();
+                så = std::fs::read_to_string(start::rett_inn_sti(&knox)).ok();
             }
         })
         .unwrap();
-        assert!(så_billetten);
-        assert!(!start::billett_sti(&knox).exists());
+        assert_eq!(så.as_deref(), Some("server=hoved\n"));
+        assert!(!start::rett_inn_sti(&knox).exists());
+        // Uten «Play» rett inn skrives den ikke.
+        let maskin = FalskMaskin::ny(&v);
+        let mut så = true;
+        let o = Oppsett { rett_inn: false, ..o };
+        kjør(&o, &n, &maskin, &mut |s| {
+            if s == Steg::Venter {
+                så = start::rett_inn_sti(&knox).exists();
+            }
+        })
+        .unwrap();
+        assert!(!så);
     }
 }

@@ -32,7 +32,8 @@ More screenshots (with example news): [Details](docs/vinduet/details.png),
    - Windows and Linux: `-javaagent:…/knoxlife-agent.jar` first in `vmArgs` in `ProjectZomboid64.json`.
    - macOS: the agent is copied into `Project Zomboid.app/Contents/Java/knoxlife/` and listed first in `JVMOptions` in
      `Contents/Info.plist`.
-7. **Starts the game through Steam**, waits for the agent to report that it loaded, and watches the game.
+7. **Starts the game through Steam**, waits for the agent to report that it loaded, and watches the game. The game
+   then joins Knox Life by itself (below).
 8. **Puts everything back** when the game closes: the copy is written back byte for byte, and the files it added are
    removed.
 
@@ -57,7 +58,7 @@ files" in Details, or Steam's "Verify integrity of game files", puts back anythi
 | `launcher/app` | The launcher's window (Tauri): Play, the news, the status line and Details. It only shows what the core does and calls it |
 | `launcher/kjerne` | The launcher's core, without a window or network: finding the game, the manifest, the version check, the download check, adding and removing the patch, and watching the game |
 | `launcher/knoxctl` | The same steps on the command line, for testing and troubleshooting |
-| `java/agent` | The Java agent (`knoxlife-agent.jar`): starts Mixin with our Java mods before the game's classes load, writes the stamp the launcher waits for, reads the travel ticket, and makes the anti-cheat report the server checks at login |
+| `java/agent` | The Java agent (`knoxlife-agent.jar`): starts Mixin with our Java mods before the game's classes load, writes the stamp the launcher waits for, joins Knox Life from the main menu when you press Play, and makes the anti-cheat report the server checks at login |
 | `utgivelse` | The release tools: rebuilding a release yourself (`bygg-pa-nytt.sh`) and making the signing key (`ny-nokkel.mjs`) |
 
 Code comments and names are in Norwegian; everything players see is in English.
@@ -69,6 +70,21 @@ and lists what does not belong there: other `-javaagent`, native agents and debu
 class loader, Java options in environment variables, extra files on the class path, class files in folders on the class
 path, and whether tools can attach to the game after it has started. It sends at most 8 findings, each at most 96
 characters, with **file names only – never folder paths**, so nothing about your folders or user name leaves your PC.
+
+## Play goes straight in
+
+There is no password. Knox Life lets you in on your Steam account, which Steam has already checked when the game joins.
+
+When you press Play, the launcher writes `server=hoved` in `Zomboid/KnoxLife/reise.txt` – only the name of the server,
+never an address. The agent reads the file once when the game starts, deletes it, and as soon as the main menu shows,
+joins that server from the launcher's signed list through the game's own connect screen, with "Abort" as usual. The
+first time on a PC the agent does not know your username: it joins as "Knox Life", and the server answers with the
+username your Steam account plays as. After you are in, the username is kept in `Zomboid/KnoxLife/konto.txt` for next
+time. That file holds only the username.
+
+If the server says no (not on the whitelist, banned, the launcher is out of date), its reason stays on the screen and
+the game does not try again. If it says "try again in a minute" (your account is being set up), the game tries again
+every 15 seconds, for up to 15 minutes.
 
 ## When the server is full
 
@@ -88,8 +104,7 @@ When the connection to Knox Life drops – the server restarts, or the network o
 same server again through the game's own connect screen, every 15 seconds for up to 15 minutes. Press "Abort" on that
 screen to stop. Nothing happens if you were kicked or banned, or on any other server.
 
-To join again, the game uses the login it already has in memory from when you joined (the password as the game stores
-it after hashing). It is never written to disk or to any log.
+To join again, the game uses the login it already has in memory from when you joined: your username, and no password.
 
 When staff send you to the Knox Life test server, the game goes to the main menu and joins it the same way. It only
 ever goes to servers listed in the launcher's signed manifest.

@@ -1,5 +1,6 @@
 package knoxlife.agent;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -17,8 +18,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class KnoxLife {
     private static volatile long bygg;
     private static volatile List<String> funn = List.of();
-    private static volatile Billett billett;
     private static volatile Servere servere;
+    private static volatile Servere.Server rettInn;
+    private static volatile Path mappe;
     private static final List<String> FEIL = Collections.synchronizedList(new ArrayList<>());
     private static final Set<String> DELER = ConcurrentHashMap.newKeySet();
     private static final Set<String> ENDRET = ConcurrentHashMap.newKeySet();
@@ -38,8 +40,17 @@ public final class KnoxLife {
         funn = List.copyOf(nye);
     }
 
-    static void settBillett(Billett b) {
-        billett = b;
+    static void settMappe(Path m) {
+        mappe = m;
+    }
+
+    /** Mappen launcheren og agenten deler ({@code Zomboid/KnoxLife}), eller {@code null} uten launcheren. */
+    public static Path mappe() {
+        return mappe;
+    }
+
+    static void settRettInn(Servere.Server s) {
+        rettInn = s;
     }
 
     static void settServere(Servere s) {
@@ -116,11 +127,11 @@ public final class KnoxLife {
         }
     }
 
-    /** Billetten fra launcheren – hentes én gang, så tas den bort. */
-    public static synchronized Billett taBillett() {
-        Billett b = billett;
-        billett = null;
-        return b;
+    /** Serveren «Play» skal rett inn på ({@link RettInn}) – hentes én gang i hovedmenyen, så tas den bort. */
+    public static synchronized Servere.Server taRettInn() {
+        Servere.Server s = rettInn;
+        rettInn = null;
+        return s;
     }
 
     /** Funnet som sier at spillet går i debug-modus. Serveren har sin egen regel for det (launcher.md 3.3 punkt 2). */

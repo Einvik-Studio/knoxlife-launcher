@@ -24,10 +24,15 @@ public final class KnoxLifeJava {
 
     /**
      * Modet er i spillet på Knox Life (klienten, ved hver innlogging): faller forbindelsen uten at spilleren er kastet
-     * ut, kobler spillet seg til igjen selv ({@link Tilbake}). ASCII i navnet, så Lua kan skrive det.
+     * ut, kobler spillet seg til igjen selv ({@link Tilbake}), og brukernavnet huskes til «Play» neste gang
+     * ({@link Konto}). ASCII i navnet, så Lua kan skrive det.
      */
     public static void paaKnoxLife() {
         Tilbake.SPILLET.påKnoxLife();
+        Tilbake.Innlogging inn = Tilbake.fraSpillet();
+        if (inn != null) {
+            Konto.skriv(KnoxLife.mappe(), inn.bruker());
+        }
     }
 
     /**

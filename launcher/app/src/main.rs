@@ -255,7 +255,7 @@ async fn spill(app: AppHandle, launcher: State<'_, Launcher>) -> Result<Utfall, 
             hjem: &hjem,
             reserve: reserve.as_deref(),
             nøkkel: nøkkel.as_ref(),
-            billett: None,
+            rett_inn: true,
             ytelsesmodus: ytelsesmodus::valgt(&tilstand),
         };
         okt::kjør(&o, &nett, &EkteMaskin::ny(), &mut |s| {
