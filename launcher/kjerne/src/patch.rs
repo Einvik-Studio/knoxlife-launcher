@@ -4,6 +4,9 @@
 //! - Windows og Linux: `-javaagent:<sti>` først i `vmArgs` i `ProjectZomboid64.json`
 //! - Mac: agenten kopieres inn i app-pakken (`Contents/Java/knoxlife/`), og `-javaagent:<sti>` står først i
 //!   `JVMOptions` i `Contents/Info.plist`
+//! - Windows: i tillegg kopieres spillets egen `jre64\bin\jli.dll` ved siden av `ProjectZomboid64.exe`. Java laster
+//!   agenten med `instrument.dll`, som trenger `jli.dll` – og Windows leter etter den ved siden av .exe-en, ikke i
+//!   `jre64\bin`. Uten kopien stopper spillet med en gang når Steam starter det (prøven på PC-en 18.11.2026).
 //!
 //! Rekkefølgen er det som gjør det trygt:
 //! 1. Står merket igjen fra forrige gang (launcheren ble drept), settes alt tilbake først.
@@ -34,6 +37,8 @@ const AGENT_FLAGG: &str = "-javaagent:";
 const MERKE_FIL: &str = "lagt-inn.json";
 const KOPI_MAPPE: &str = "kopi";
 const MAC_MAPPE: &str = "knoxlife";
+/// Filen `instrument.dll` trenger på Windows.
+pub const JLI: &str = "jli.dll";
 
 /// Det som står i merket mens patchen er lagt inn.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -49,6 +54,32 @@ pub struct Merke {
     pub lagt_til: Vec<PathBuf>,
     /// Mappene vi laget i app-pakken, innerste først.
     pub mapper_laget: Vec<PathBuf>,
+    /// Filene vi kopierte inn i spillmappen fra spillets egen Java (Windows: `jli.dll`). De fjernes bare når de
+    /// fortsatt er slik vi la dem.
+    #[serde(default)]
+    pub kopiert: Vec<Kopiert>,
+}
+
+/// En fil vi kopierte inn i spillmappen, med SHA-256 av innholdet.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Kopiert {
+    pub fil: PathBuf,
+    pub sha: String,
+}
+
+/// Windows: `jli.dll` fra spillets egen Java, til mappen med `ProjectZomboid64.exe`. `None` når det ikke trengs: på de
+/// andre plattformene, når spillet ikke har filen, eller når det alt ligger en der – den er ikke vår og røres ikke.
+fn jli_kopi(spill: &Spill) -> Option<(PathBuf, Kopiert)> {
+    if spill.plattform != Plattform::Windows {
+        return None;
+    }
+    let fra = spill.rot.join("jre64").join("bin").join(JLI);
+    let til = spill.rot.join(JLI);
+    if til.exists() {
+        return None;
+    }
+    let bytes = fs::read(&fra).ok()?;
+    Some((fra, Kopiert { fil: til, sha: sha256(&bytes) }))
 }
 
 /// Det patchen trenger å vite.
@@ -282,6 +313,7 @@ pub fn legg_inn(spill: &Spill, tilstand: &Path, p: &Patch) -> Resultat<()> {
         }
         None => (p.agent.to_path_buf(), Vec::new(), Vec::new()),
     };
+    let jli = jli_kopi(spill);
 
     // 2. Kopien av originalen, lest tilbake for å være sikker.
     let kopi = kopi_sti(tilstand, &fil);
@@ -299,6 +331,7 @@ pub fn legg_inn(spill: &Spill, tilstand: &Path, p: &Patch) -> Resultat<()> {
         bygg: p.bygg,
         lagt_til,
         mapper_laget,
+        kopiert: jli.iter().map(|(_, k)| k.clone()).collect(),
     };
     skriv_merke(tilstand, &merke)?;
 
@@ -308,6 +341,9 @@ pub fn legg_inn(spill: &Spill, tilstand: &Path, p: &Patch) -> Resultat<()> {
     }
     if agent_i_spillet != p.agent {
         fs::copy(p.agent, &agent_i_spillet)?;
+    }
+    if let Some((fra, k)) = &jli {
+        fs::copy(fra, &k.fil)?;
     }
     let i_spillet = Patch { agent: &agent_i_spillet, ..p.clone() };
     let ny = med_patch(&original, &i_spillet, spill.plattform)?;
@@ -358,6 +394,12 @@ pub fn sett_tilbake(spill: &Spill, tilstand: &Path) -> Resultat<bool> {
     }
     for mappe in &merke.mapper_laget {
         let _ = fs::remove_dir(mappe); // bare hvis den er tom
+    }
+    for k in &merke.kopiert {
+        // Er filen byttet ut mens spillet gikk (en oppdatering av spillet), er den ikke lenger vår.
+        if fs::read(&k.fil).map(|b| sha256(&b) == k.sha).unwrap_or(false) {
+            fs::remove_file(&k.fil)?;
+        }
     }
     fs::remove_file(merke_sti(tilstand))?;
     Ok(true)
@@ -593,5 +635,55 @@ mod prøver {
         assert!(!er_vår("-javaagent:C:/x/plz-agent.jar"));
         assert!(!er_vår("-javaagent:C:/x/knoxlife-agent.jar.bak"));
         assert!(!er_vår("-Xmx3072m"));
+    }
+    fn med_jli(o: &Oppsett) -> PathBuf {
+        let jli = o.spill.rot.join("jre64").join("bin").join(JLI);
+        fs::create_dir_all(jli.parent().unwrap()).unwrap();
+        fs::write(&jli, b"jli fra spillet").unwrap();
+        o.spill.rot.join(JLI)
+    }
+
+    #[test]
+    fn windows_legger_jli_ved_siden_av_spillet_og_fjerner_den_igjen() {
+        let o = oppsett(Plattform::Windows);
+        let ved_siden = med_jli(&o);
+        legg_inn(&o.spill, &o.tilstand, &o.patch()).unwrap();
+        assert_eq!(fs::read(&ved_siden).unwrap(), b"jli fra spillet");
+        // Launcheren dør og starter igjen: kopien ryddes og legges inn på nytt.
+        legg_inn(&o.spill, &o.tilstand, &o.patch()).unwrap();
+        assert!(ved_siden.exists());
+        sett_tilbake(&o.spill, &o.tilstand).unwrap();
+        assert!(!ved_siden.exists());
+        assert!(o.spill.rot.join("jre64").join("bin").join(JLI).exists(), "spillets egen står");
+    }
+
+    #[test]
+    fn jli_som_ikke_er_vår_røres_ikke() {
+        let o = oppsett(Plattform::Windows);
+        let ved_siden = med_jli(&o);
+        fs::write(&ved_siden, b"noen andres").unwrap();
+        legg_inn(&o.spill, &o.tilstand, &o.patch()).unwrap();
+        sett_tilbake(&o.spill, &o.tilstand).unwrap();
+        assert_eq!(fs::read(&ved_siden).unwrap(), b"noen andres");
+
+        // Byttet ut mens spillet gikk (en oppdatering): blir stående.
+        fs::remove_file(&ved_siden).unwrap();
+        legg_inn(&o.spill, &o.tilstand, &o.patch()).unwrap();
+        fs::write(&ved_siden, b"fra en oppdatering").unwrap();
+        sett_tilbake(&o.spill, &o.tilstand).unwrap();
+        assert_eq!(fs::read(&ved_siden).unwrap(), b"fra en oppdatering");
+    }
+
+    #[test]
+    fn jli_bare_på_windows_og_gamle_merker_leses() {
+        let o = oppsett(Plattform::Linux);
+        let ved_siden = med_jli(&o);
+        legg_inn(&o.spill, &o.tilstand, &o.patch()).unwrap();
+        assert!(!ved_siden.exists());
+        // Et merke fra før feltet fantes.
+        let mut v: Value = serde_json::from_slice(&fs::read(merke_sti(&o.tilstand)).unwrap()).unwrap();
+        v.as_object_mut().unwrap().remove("kopiert");
+        fs::write(merke_sti(&o.tilstand), serde_json::to_vec(&v).unwrap()).unwrap();
+        assert!(sett_tilbake(&o.spill, &o.tilstand).unwrap());
     }
 }
