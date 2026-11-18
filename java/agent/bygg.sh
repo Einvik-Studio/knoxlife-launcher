@@ -33,13 +33,14 @@ mkdir -p "$UT/libs" "$UT/klasser" "$UT/innhold/META-INF/licenses" "$UT/pakket" "
 UT="$(cd "$UT" && (pwd -W 2>/dev/null || pwd))"
 
 echo "== bibliotekene (Maven Central, sjekket mot libs.lock)"
+# Uten fast ventetid venter curl dobbelt så lenge for hvert nytt forsøk (og så lenge Maven Central ber om ved 429).
 LIBS=()
 while read -r forventet navn adresse; do
   adresse="${adresse%$'\r'}"
   [[ -z "${forventet:-}" || "$forventet" == \#* ]] && continue
   fil="$UT/libs/$navn"
   if [[ ! -f "$fil" || "$(sha "$fil")" != "$forventet" ]]; then
-    curl -fsSL --retry 6 --retry-all-errors --retry-delay 1 -o "$fil.del" "$adresse"
+    curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 -o "$fil.del" "$adresse"
     if [[ "$(sha "$fil.del")" != "$forventet" ]]; then
       echo "Feil SHA-256 for $navn" >&2
       exit 1
