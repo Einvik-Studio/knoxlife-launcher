@@ -12,6 +12,7 @@ use crate::patch::{self, Patch, AGENT_FIL};
 use crate::porten::{self, Svar};
 use crate::spillet::Spill;
 use crate::start::{self, Billett, Tilstand, Vakt};
+use crate::ytelsesmodus;
 use ed25519_dalek::VerifyingKey;
 use serde::Serialize;
 use std::cell::RefCell;
@@ -80,6 +81,8 @@ pub struct Oppsett<'a> {
     pub nøkkel: Option<&'a VerifyingKey>,
     /// Engangsbilletten fra tjeneren, når spillet skal rett inn på serveren.
     pub billett: Option<&'a Billett>,
+    /// Ytelsesmodus (3.8 punkt 5): spilleren har slått den på under «Details».
+    pub ytelsesmodus: bool,
 }
 
 /// Henter filene i patchen og sier fra om hver.
@@ -110,6 +113,10 @@ pub fn kjør(o: &Oppsett, nett: &dyn Nett, maskin: &dyn Maskin, steg: &mut dyn F
     // 1–2. En rest fra forrige gang settes tilbake før noe annet, og spillet kan ikke gå allerede.
     si(Steg::Rydder);
     patch::rydd_etter_forrige(o.spill, o.tilstand)?;
+    let options = ytelsesmodus::options_sti(o.hjem);
+    // Spillerens egne verdier i options.ini fra en økt som ble stoppet midt i. Det som ikke kan settes tilbake nå,
+    // huskes til neste gang – det stopper ikke spillet.
+    let _ = ytelsesmodus::sett_tilbake(&options, o.tilstand);
     if maskin.spillet_kjører() {
         return Err(Feil::SpilletKjører);
     }
@@ -159,6 +166,10 @@ pub fn kjør(o: &Oppsett, nett: &dyn Nett, maskin: &dyn Maskin, steg: &mut dyn F
         if let Some(b) = o.billett {
             start::skriv_billett(&knox, b)?;
         }
+        if o.ytelsesmodus {
+            // Ytelsesmodus er bare en hjelp: går den ikke, startes spillet med spillerens egne verdier.
+            let _ = ytelsesmodus::slå_på(&options, o.tilstand, &ytelsesmodus::verdiene(m.ytelsesmodus.as_ref()));
+        }
         si(Steg::StarterSteam);
         maskin.start_steam()?;
         si(Steg::Venter);
@@ -184,8 +195,10 @@ pub fn kjør(o: &Oppsett, nett: &dyn Nett, maskin: &dyn Maskin, steg: &mut dyn F
         Ok(lastet)
     })();
 
-    // 12. Tilbake – det viktigste, så en feil her går foran en feil over.
+    // 12. Tilbake – det viktigste, så en feil her går foran en feil over. Spillerens egne verdier i options.ini først
+    // (går det ikke, settes de tilbake neste gang), så filene i spillet.
     si(Steg::SetterTilbake);
+    let _ = ytelsesmodus::sett_tilbake(&options, o.tilstand);
     patch::sett_tilbake(o.spill, o.tilstand).map_err(|e| match e {
         Feil::SpillmappenBorte(_) | Feil::KunneIkkeSetteTilbake(_) => e,
         annet => Feil::KunneIkkeSetteTilbake(annet.to_string()),
@@ -269,6 +282,9 @@ mod prøver {
         klokke: Cell<Option<u64>>,
         så_filen: RefCell<Option<Vec<u8>>>,
         fil: PathBuf,
+        /// `options.ini` slik spillet fant den da det startet.
+        så_options: RefCell<Option<String>>,
+        options: PathBuf,
     }
 
     impl FalskMaskin {
@@ -281,6 +297,8 @@ mod prøver {
                 klokke: Cell::new(None),
                 så_filen: RefCell::new(None),
                 fil: v.spill.innstillingsfil(),
+                så_options: RefCell::new(None),
+                options: ytelsesmodus::options_sti(&v.hjem),
             }
         }
     }
@@ -297,6 +315,7 @@ mod prøver {
                 return Err(Feil::SteamStartetIkke("prøve".into()));
             }
             *self.så_filen.borrow_mut() = Some(fs::read(&self.fil).unwrap());
+            *self.så_options.borrow_mut() = fs::read_to_string(&self.options).ok();
             self.klokke.set(Some(0));
             Ok(())
         }
@@ -314,6 +333,10 @@ mod prøver {
     }
 
     fn kjør_økt(v: &Verden, nett: &dyn Nett, maskin: &dyn Maskin) -> (Resultat<Utfall>, Vec<Steg>) {
+        kjør_økt_med(v, nett, maskin, false)
+    }
+
+    fn kjør_økt_med(v: &Verden, nett: &dyn Nett, maskin: &dyn Maskin, ytelsesmodus: bool) -> (Resultat<Utfall>, Vec<Steg>) {
         let nøkkel = v.nøkkel.verifying_key();
         let o = Oppsett {
             spill: &v.spill,
@@ -322,10 +345,53 @@ mod prøver {
             reserve: None,
             nøkkel: Some(&nøkkel),
             billett: None,
+            ytelsesmodus,
         };
         let mut steg = Vec::new();
         let svar = kjør(&o, nett, maskin, &mut |s| steg.push(s));
         (svar, steg)
+    }
+
+    #[test]
+    fn ytelsesmodus_står_i_options_ini_mens_spillet_går_og_er_borte_etterpå() {
+        let v = verden();
+        let options = ytelsesmodus::options_sti(&v.hjem);
+        fs::create_dir_all(options.parent().unwrap()).unwrap();
+        let før = "version=8\r\nwater=0\r\nperfSkybox=1\r\nwidth=1920\r\n";
+        fs::write(&options, før).unwrap();
+        // Av: filen røres ikke.
+        let n = nett(&v, &manifest(12));
+        let maskin = FalskMaskin::ny(&v);
+        assert!(kjør_økt(&v, &n, &maskin).0.is_ok());
+        assert_eq!(maskin.så_options.borrow().as_deref(), Some(før));
+        // På: profilen mens spillet går, og spillerens egne verdier etterpå.
+        let maskin = FalskMaskin::ny(&v);
+        assert!(kjør_økt_med(&v, &n, &maskin, true).0.is_ok());
+        let under = maskin.så_options.borrow().clone().unwrap();
+        assert!(under.contains("water=2\r\n") && under.contains("perfSkybox=2\r\n") && under.contains("width=1920\r\n"), "{under}");
+        assert_eq!(fs::read_to_string(&options).unwrap(), før);
+        // Manifestets egen liste går foran den innebygde.
+        let mut m = manifest(13);
+        m.ytelsesmodus = Some([("water".to_string(), "1".to_string())].into_iter().collect());
+        let n = nett(&v, &m);
+        let maskin = FalskMaskin::ny(&v);
+        assert!(kjør_økt_med(&v, &n, &maskin, true).0.is_ok());
+        let under = maskin.så_options.borrow().clone().unwrap();
+        assert!(under.contains("water=1\r\n") && under.contains("perfSkybox=1\r\n"), "{under}");
+        assert_eq!(fs::read_to_string(&options).unwrap(), før);
+    }
+
+    #[test]
+    fn ytelsesmodus_settes_tilbake_også_når_steam_ikke_starter() {
+        let v = verden();
+        let options = ytelsesmodus::options_sti(&v.hjem);
+        fs::create_dir_all(options.parent().unwrap()).unwrap();
+        fs::write(&options, "water=0\n").unwrap();
+        let n = nett(&v, &manifest(12));
+        let mut maskin = FalskMaskin::ny(&v);
+        maskin.steam_feiler = true;
+        assert!(matches!(kjør_økt_med(&v, &n, &maskin, true).0, Err(Feil::SteamStartetIkke(_))));
+        assert_eq!(fs::read_to_string(&options).unwrap(), "water=0\n");
     }
 
     #[test]
@@ -391,7 +457,15 @@ mod prøver {
         let v = verden();
         let n = nett(&v, &manifest(12));
         let maskin = FalskMaskin::ny(&v);
-        let o = Oppsett { spill: &v.spill, tilstand: &v.tilstand, hjem: &v.hjem, reserve: None, nøkkel: None, billett: None };
+        let o = Oppsett {
+            spill: &v.spill,
+            tilstand: &v.tilstand,
+            hjem: &v.hjem,
+            reserve: None,
+            nøkkel: None,
+            billett: None,
+            ytelsesmodus: false,
+        };
         let svar = kjør(&o, &n, &maskin, &mut |_| {});
         assert!(matches!(svar, Err(Feil::Signatur)));
     }
@@ -482,6 +556,7 @@ mod prøver {
             reserve: None,
             nøkkel: Some(&nøkkel),
             billett: Some(&billett),
+            ytelsesmodus: false,
         };
         let knox = start::knox_mappe(&v.hjem);
         let mut så_billetten = false;

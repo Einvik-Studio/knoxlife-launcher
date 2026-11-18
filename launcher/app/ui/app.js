@@ -221,4 +221,28 @@ $("sett-tilbake").addEventListener("click", () =>
 $("kopier-rapport").addEventListener("click", () => kommando("kopier_rapport", () => "The report is copied. Paste it to staff on Discord."));
 $("loggmappe").addEventListener("click", () => kommando("apne_loggmappen"));
 
+// «Performance mode»: valget huskes av launcheren og gjelder fra neste «Play».
+function visYtelse(på) {
+  $("ytelse").setAttribute("aria-checked", på ? "true" : "false");
+}
+$("ytelse").addEventListener("click", async () => {
+  const på = $("ytelse").getAttribute("aria-checked") !== "true";
+  $("ytelse").disabled = true;
+  try {
+    await invoke("velg_ytelsesmodus", { paa: på });
+    visYtelse(på);
+    visMelding(
+      på
+        ? (iGang ? "Performance mode is on from the next time you press Play." : "Performance mode is on. It is used when you press Play.")
+        : (iGang ? "Performance mode is off from the next time you press Play." : "Performance mode is off."),
+      { ok: true },
+    );
+  } catch (feil) {
+    visMelding(String(feil), { rapport: true });
+  } finally {
+    $("ytelse").disabled = false;
+  }
+});
+invoke("ytelsesmodus_valgt").then(visYtelse).catch(() => visYtelse(false));
+
 start();

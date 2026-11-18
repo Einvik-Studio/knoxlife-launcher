@@ -90,6 +90,12 @@ The server can also give the game a list of event functions to skip, for mod fun
 Every entry names the mod, the file and the line, with the reason. The list and the timing only apply while you are on
 Knox Life: both are cleared as soon as the game is back in the main menu, so other servers get the game as it is.
 
+**Performance mode** (off unless you turn it on in Details) sets a few graphics options in `Zomboid/options.ini` while
+you play: simpler water, puddles and sky, no reflections, fewer ragdolls and blood decals, and the game's menus drawn 30
+times a second. Before the game starts, the launcher remembers the values you had; when the game closes, each one is put
+back – unless you changed it yourself in the game, then your choice stays. Nothing about sound, the screen or the
+controls is touched. The list is in `launcher/kjerne/src/ytelsesmodus.rs`, and the signed manifest can replace it.
+
 ## Building and testing
 
 ```sh

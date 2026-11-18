@@ -11,7 +11,7 @@ use crate::feil::{Feil, Resultat};
 use crate::patch::AGENT_FIL;
 use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::Path;
 
@@ -46,6 +46,10 @@ pub struct Manifest {
     /// Nyhetene launcheren viser, nyeste først – signert sammen med resten, så ingen andre kan skrive dem.
     #[serde(default)]
     pub nyheter: Vec<Nyhet>,
+    /// Verdiene i `options.ini` for ytelsesmodus (3.8 punkt 5), når de skal være andre enn dem launcheren har bygget
+    /// inn ([`crate::ytelsesmodus::PROFIL`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ytelsesmodus: Option<BTreeMap<String, String>>,
 }
 
 /// Én nyhet i launcheren. Teksten er på engelsk, som alt spillerne ser.
@@ -159,6 +163,12 @@ impl Manifest {
         {
             return feil("news");
         }
+        if self.ytelsesmodus.as_ref().is_some_and(|y| {
+            y.len() > crate::ytelsesmodus::FLEST
+                || y.iter().any(|(n, v)| !crate::ytelsesmodus::gyldig_navn(n) || !crate::ytelsesmodus::gyldig_verdi(v))
+        }) {
+            return feil("performance mode");
+        }
         let mut sett = HashSet::new();
         for f in &self.filer {
             if !trygt_filnavn(&f.navn) {
@@ -231,6 +241,7 @@ pub(crate) mod prøver {
             testserver: None,
             nødmodus: false,
             nyheter: Vec::new(),
+            ytelsesmodus: None,
         }
     }
 
@@ -317,6 +328,23 @@ pub(crate) mod prøver {
         m.nyheter[0].tittel = " ".into();
         assert!(m.sjekk().is_err());
         m.nyheter = vec![Nyhet { dato: "d".into(), tittel: "t".into(), tekst: String::new() }; FLEST_NYHETER + 1];
+        assert!(m.sjekk().is_err());
+    }
+
+    #[test]
+    fn ytelsesmodus_i_manifestet_er_navn_og_verdier_som_ikke_kan_bli_nye_linjer() {
+        let n = nøkkelpar();
+        let mut m = eksempel(7);
+        m.ytelsesmodus = Some([("water".to_string(), "1".to_string())].into_iter().collect());
+        let (json, sig) = signer(&m, &n);
+        assert_eq!(Manifest::les_signert(&json, &sig, &n.verifying_key()).unwrap().ytelsesmodus, m.ytelsesmodus);
+        // Uten listen står den ikke i manifestet, og launcheren bruker sin egen.
+        assert!(!String::from_utf8(signer(&eksempel(7), &n).0).unwrap().contains("ytelsesmodus"));
+        for (navn, verdi) in [("water", "2\nfullScreen=true"), ("water=", "2"), ("", "1"), ("water", "")] {
+            m.ytelsesmodus = Some([(navn.to_string(), verdi.to_string())].into_iter().collect());
+            assert!(m.sjekk().is_err(), "{navn:?}={verdi:?}");
+        }
+        m.ytelsesmodus = Some((0..=crate::ytelsesmodus::FLEST).map(|i| (format!("a{i}"), "1".to_string())).collect());
         assert!(m.sjekk().is_err());
     }
 

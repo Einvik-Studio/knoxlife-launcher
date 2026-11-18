@@ -104,6 +104,14 @@ h1 { margin: 0; font-family: Archivo, sans-serif; font-weight: 800; font-size: 7
 .tekst { flex: 1; min-width: 0; }
 .navn { font-weight: 600; font-size: 14px; }
 .forklaring { margin-top: 2px; font-size: 13px; line-height: 1.45; color: var(--svak); }
+/* «Performance mode»: en bryter som står på eller av. */
+.bryter { flex: none; position: relative; width: 52px; height: 30px; padding: 0; border: 1px solid var(--kant); border-radius: 15px; background: var(--flate); }
+.bryter:hover { border-color: #46525a; }
+.bryter-knott { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--svak); transition: transform 120ms ease; }
+.bryter[aria-checked="true"] { border-color: var(--lys); background: var(--lys); }
+.bryter[aria-checked="true"] .bryter-knott { transform: translateX(22px); background: var(--lys-tekst); }
+.bryter:disabled { opacity: 0.5; }
+@media (prefers-reduced-motion: reduce) { .bryter-knott { transition: none; } }
 .lenke { height: 44px; padding: 0; border: 0; background: none; color: var(--lys); font-size: 14px; }
 .lenke:hover { color: #f3c27a; text-decoration: underline; }
 .detaljer-bunn { padding: 16px 24px; border-top: 1px solid var(--strek); font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--svak); user-select: text; }

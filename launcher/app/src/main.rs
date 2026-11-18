@@ -11,7 +11,7 @@ use knoxlife_kjerne::manifest::{self, Manifest, Nyhet};
 use knoxlife_kjerne::okt::{self, Maskin, Nett, Oppsett, Steg, Utfall};
 use knoxlife_kjerne::porten::{self, Svar};
 use knoxlife_kjerne::spillet::{self, Plattform, Spill};
-use knoxlife_kjerne::{patch, rapport, start, Feil, Resultat};
+use knoxlife_kjerne::{patch, rapport, start, ytelsesmodus, Feil, Resultat};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -189,6 +189,7 @@ async fn spill(app: AppHandle, launcher: State<'_, Launcher>) -> Result<Utfall, 
             reserve: reserve.as_deref(),
             nøkkel: nøkkel.as_ref(),
             billett: None,
+            ytelsesmodus: ytelsesmodus::valgt(&tilstand),
         };
         okt::kjør(&o, &nett, &EkteMaskin::ny(), &mut |s| {
             let _ = app2.emit("steg", &s);
@@ -246,8 +247,22 @@ fn sett_tilbake(launcher: State<'_, Launcher>) -> Result<bool, String> {
     if launcher.i_gang.load(Ordering::SeqCst) || start::spillet_kjører(Plattform::denne()) {
         return Err(Feil::SpilletKjører.to_string());
     }
+    let tilstand = tilstand();
+    let options = ytelsesmodus::sett_tilbake(&ytelsesmodus::options_sti(&hjem()), &tilstand).map_err(|e| e.to_string())?;
     let spill = finn_spillet().map_err(|e| e.to_string())?;
-    patch::sett_tilbake(&spill, &tilstand()).map_err(|e| e.to_string())
+    Ok(patch::sett_tilbake(&spill, &tilstand).map_err(|e| e.to_string())? || options)
+}
+
+/// «Performance mode» under «Details»: står den på?
+#[tauri::command]
+fn ytelsesmodus_valgt() -> bool {
+    ytelsesmodus::valgt(&tilstand())
+}
+
+/// Slår «Performance mode» av eller på. Gjelder fra neste «Play».
+#[tauri::command]
+fn velg_ytelsesmodus(paa: bool) -> Result<(), String> {
+    ytelsesmodus::velg(&tilstand(), paa).map_err(|e| e.to_string())
 }
 
 /// «Copy report»: rapporten legges på utklippstavlen, og spilleren limer den inn selv.
@@ -277,6 +292,7 @@ fn apne_loggmappen(app: AppHandle) -> Result<(), String> {
 fn main() {
     // En rest fra forrige gang (launcheren ble drept, PC-en gikk av) settes tilbake straks, når spillet ikke går.
     if !start::spillet_kjører(Plattform::denne()) {
+        let _ = ytelsesmodus::sett_tilbake(&ytelsesmodus::options_sti(&hjem()), &tilstand());
         if let Ok(spill) = finn_spillet() {
             let _ = patch::rydd_etter_forrige(&spill, &tilstand());
         }
@@ -299,6 +315,8 @@ fn main() {
             velg_mappe,
             kopier_steam_id,
             sett_tilbake,
+            ytelsesmodus_valgt,
+            velg_ytelsesmodus,
             kopier_rapport,
             apne_loggmappen
         ])
