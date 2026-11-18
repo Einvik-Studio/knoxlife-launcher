@@ -149,7 +149,8 @@ jobs:
           "$K" lag-manifest forrige/manifest.json --bygg 1 --utgitt "$utgitt" --versjon 42.0.0 --spillet-sha256 "$SPILLET_SHA" \
             --fil "$RUNNER_TEMP/patch/knoxlife-agent.jar" --server play.example.invalid:16261 --nyhet "Test|First test release."
           KNOXLIFE_SIGNERINGSNOKKEL="$(cat nokkel.txt)" "$K" signer forrige/manifest.json
-          "$K" lag-manifest ny/manifest.json --bygg "$KNOXLIFE_BYGG" --utgitt "$utgitt" --versjon "$VERSJON" \
+          # Den forrige har bygg 1, så den nye får et høyere nummer også i den første kjøringen.
+          "$K" lag-manifest ny/manifest.json --bygg "$((KNOXLIFE_BYGG + 1))" --utgitt "$utgitt" --versjon "$VERSJON" \
             --spillet-sha256 "$SPILLET_SHA" --fil "$RUNNER_TEMP/patch/knoxlife-agent.jar" --server play.example.invalid:16261 \
             --testserver "" --status https://status.example.invalid/ --forrige forrige --nokkel "$offentlig" --nyhet ""
           KNOXLIFE_SIGNERINGSNOKKEL="$(cat nokkel.txt)" "$K" signer ny/manifest.json | tee signert.txt
