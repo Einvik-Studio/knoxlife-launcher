@@ -2,5 +2,8 @@
 # Java-modene griper inn i, fra versjonen de er prøvd mot. Endres en av dem i en ny versjon av spillet, stopper
 # bygget til noen har lest metoden og sjekket Java-moden; bygget skriver da ut hva filen skal være.
 zombie.Lua.LuaManager$Exposer#exposeAll()V 4ca306c049f8c345005c18c9eccd83fd638d9ea3
+zombie.gameStates.MainScreenState#update()Lzombie/gameStates/GameStateMachine$StateAction; b4234ca06c81c33f699b7953f0fd4647216458e3
+zombie.gameStates.ServerDisconnectState#enter()V 883b55d1e2751a9635dc247359c2283175f39bef
+zombie.gameStates.ServerDisconnectState#update()Lzombie/gameStates/GameStateMachine$StateAction; 8dbce61568a35f6163cbc32fabb3d54120d22cdc
 zombie.network.packets.connection.LoginPacket#write(Lzombie/core/network/ByteBufferWriter;)V aa0811eada2797e20c8ba52aa0facd9f7d1e0d6c
 zombie.network.packets.service.AccessDeniedPacket#processClientLoading(Lzombie/core/raknet/UdpConnection;)V d3a4f3f356b22d509ac103bd87fc7d22e60581d3
