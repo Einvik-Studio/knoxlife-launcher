@@ -39,7 +39,24 @@ pub struct Manifest {
     /// Nødmodus (3.9 punkt 9): spillet startes uten patch.
     #[serde(default, rename = "nodmodus")]
     pub nødmodus: bool,
+    /// Nyhetene launcheren viser, nyeste først – signert sammen med resten, så ingen andre kan skrive dem.
+    #[serde(default)]
+    pub nyheter: Vec<Nyhet>,
 }
+
+/// Én nyhet i launcheren. Teksten er på engelsk, som alt spillerne ser.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Nyhet {
+    /// Datoen slik den vises («2026-11-18»).
+    pub dato: String,
+    pub tittel: String,
+    pub tekst: String,
+}
+
+/// Høyst så mange nyheter, og så lange.
+pub const FLEST_NYHETER: usize = 10;
+const LENGSTE_TITTEL: usize = 80;
+const LENGSTE_NYHET: usize = 300;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Spillversjon {
@@ -115,6 +132,16 @@ impl Manifest {
         if self.filer.is_empty() {
             return feil("no files");
         }
+        if self.nyheter.len() > FLEST_NYHETER
+            || self.nyheter.iter().any(|n| {
+                n.dato.chars().count() > 20
+                    || n.tittel.trim().is_empty()
+                    || n.tittel.chars().count() > LENGSTE_TITTEL
+                    || n.tekst.chars().count() > LENGSTE_NYHET
+            })
+        {
+            return feil("news");
+        }
         let mut sett = HashSet::new();
         for f in &self.filer {
             if !trygt_filnavn(&f.navn) {
@@ -185,6 +212,7 @@ pub(crate) mod prøver {
             filer: vec![Fil { navn: AGENT_FIL.into(), sha256: "cd".repeat(32), størrelse: 1234 }],
             server: Server { adresse: "play.example.invalid".into(), port: 16261 },
             nødmodus: false,
+            nyheter: Vec::new(),
         }
     }
 
@@ -246,6 +274,31 @@ pub(crate) mod prøver {
         assert!(m.sjekk().is_err());
         let mut m = eksempel(1);
         m.format = 2;
+        assert!(m.sjekk().is_err());
+    }
+
+    #[test]
+    fn nyhetene_leses_og_holdes_korte() {
+        let n = nøkkelpar();
+        let mut m = eksempel(7);
+        m.nyheter.push(Nyhet { dato: "2026-11-18".into(), tittel: "Patch 7 is ready".into(), tekst: "For game 42.22.2.".into() });
+        let (json, sig) = signer(&m, &n);
+        assert_eq!(Manifest::les_signert(&json, &sig, &n.verifying_key()).unwrap().nyheter, m.nyheter);
+
+        // Et manifest uten nyheter (det første formatet) leses som før.
+        let uten: serde_json::Value = serde_json::from_slice(&signer(&eksempel(7), &n).0).unwrap();
+        let mut uten = uten.as_object().unwrap().clone();
+        uten.remove("nyheter");
+        let json = serde_json::to_vec(&uten).unwrap();
+        let sig = hex::encode(ed25519_dalek::Signer::sign(&n, &json).to_bytes()).into_bytes();
+        assert!(Manifest::les_signert(&json, &sig, &n.verifying_key()).unwrap().nyheter.is_empty());
+
+        m.nyheter[0].tekst = "x".repeat(301);
+        assert!(m.sjekk().is_err());
+        m.nyheter[0].tekst = "ok".into();
+        m.nyheter[0].tittel = " ".into();
+        assert!(m.sjekk().is_err());
+        m.nyheter = vec![Nyhet { dato: "d".into(), tittel: "t".into(), tekst: String::new() }; FLEST_NYHETER + 1];
         assert!(m.sjekk().is_err());
     }
 
