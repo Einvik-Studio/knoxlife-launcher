@@ -1,0 +1,118 @@
+/* Knox Life-launcheren: «Kveld i Rosewood». Mørkt vindu, gult gatelys. Fontene ligger i fonter/ (SIL OFL). */
+@font-face { font-family: "Archivo"; src: url("fonter/archivo.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Inter"; src: url("fonter/inter.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "IBM Plex Mono"; src: url("fonter/plex-mono-400.woff2") format("woff2"); font-weight: 400; }
+@font-face { font-family: "IBM Plex Mono"; src: url("fonter/plex-mono-500.woff2") format("woff2"); font-weight: 500; }
+
+:root {
+  --bakgrunn: #0e1215;
+  --topp: #0b0e10;
+  --flate: #151b1f;
+  --flate-detaljer: #12171a;
+  --strek: #1f262b;
+  --kant: #2c353b;
+  --tekst: #ece8df;
+  --tittel: #f4f0e6;
+  --dempet: #b9c0c5;
+  --svak: #9aa3a9;
+  --lys: #e8a33d;
+  --lys-tekst: #17120a;
+  --gronn: #5fd38d;
+  --rod: #f08a7a;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bakgrunn); color: var(--tekst); overflow: hidden; }
+body { font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; user-select: none; }
+button { font: inherit; cursor: pointer; }
+button:disabled { cursor: default; }
+button:focus-visible { outline: 2px solid var(--lys); outline-offset: 2px; }
+
+.vindu { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+
+.tittel { height: 40px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 0 16px; background: var(--topp); border-bottom: 1px solid var(--strek); }
+.merke { font-family: Archivo, sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 0.14em; color: var(--svak); }
+.knapper { display: flex; gap: 2px; }
+.ikon { width: 44px; height: 32px; border: 0; border-radius: 4px; background: none; color: var(--svak); display: grid; place-items: center; }
+.ikon:hover { background: #1a2126; color: var(--tekst); }
+#lukk:hover { background: #8e2a1f; color: #fff; }
+
+.midten { flex: 1; min-height: 0; position: relative; display: flex; gap: 32px; padding: 36px 40px 0; }
+.venstre { flex: 1 1 0; display: flex; flex-direction: column; gap: 14px; position: relative; z-index: 1; }
+.sted { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--lys); letter-spacing: 0.06em; }
+h1 { margin: 0; font-family: Archivo, sans-serif; font-weight: 800; font-size: 76px; line-height: 0.92; letter-spacing: -0.02em; color: var(--tittel); }
+.ingress { margin: 6px 0 0; max-width: 340px; font-size: 15px; line-height: 1.55; color: var(--dempet); }
+
+.nyheter { width: 380px; display: flex; flex-direction: column; gap: 10px; position: relative; z-index: 1; }
+.nyheter h2 { margin: 0; font-family: Archivo, sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 0.1em; color: var(--svak); }
+.liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.kort { padding: 12px 14px; background: var(--flate); border: 1px solid #232b31; border-radius: 6px; }
+.kort.tom { color: var(--svak); font-size: 14px; }
+.dato { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--svak); }
+.overskrift { margin-top: 4px; font-weight: 600; font-size: 15px; }
+.brodtekst { margin-top: 2px; font-size: 13px; line-height: 1.45; color: var(--dempet); }
+
+.byen { position: absolute; left: 0; right: 0; bottom: 0; height: 120px; display: flex; align-items: flex-end; gap: 6px; padding: 0 24px; z-index: 0; }
+.hus { background: #161c20; }
+.hus i { display: block; height: 8px; background: #1d2428; }
+.hus i.lys { background: var(--lys); opacity: 0.85; }
+.hus i.lys.svak { opacity: 0.6; }
+.h1 { width: 70px; height: 54px; }
+.h2 { width: 46px; height: 88px; background: #141a1e; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 14px 10px; align-content: start; }
+.h3 { width: 120px; height: 40px; }
+.h4 { width: 30px; height: 104px; background: #12171a; }
+.h5 { width: 90px; height: 66px; background: #151b1f; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 14px 12px; align-content: start; }
+.h6 { width: 160px; height: 30px; }
+.h7 { width: 54px; height: 76px; background: #13181b; }
+.lykt { width: 2px; height: 96px; background: #2a3238; position: relative; }
+.lykt::before { content: ""; position: absolute; top: -4px; left: -10px; width: 22px; height: 6px; background: var(--lys); border-radius: 3px; }
+.h8 { width: 110px; height: 48px; }
+.h9 { flex: 1; height: 36px; background: #141a1e; }
+
+.versjon { position: absolute; left: 40px; bottom: 98px; font-family: "IBM Plex Mono", monospace; font-size: 11px; color: #8a9399; z-index: 1; }
+
+.melding { position: absolute; left: 40px; right: 24px; bottom: 104px; z-index: 3; display: flex; align-items: center; gap: 12px; padding: 10px 8px 10px 16px; background: #1b1512; border: 1px solid #5a3a26; border-radius: 6px; }
+.melding p { flex: 1; margin: 0; font-size: 14px; line-height: 1.45; color: var(--tekst); user-select: text; }
+.melding.ok { background: #121b16; border-color: #2c5a3f; }
+
+.bunn { height: 92px; flex: none; display: flex; align-items: center; gap: 24px; padding: 0 24px 0 40px; background: var(--topp); border-top: 1px solid var(--strek); position: relative; z-index: 2; }
+.status { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.linje1 { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 500; }
+.linje2 { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--svak); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prikk { width: 9px; height: 9px; flex: none; border-radius: 50%; background: var(--svak); }
+.prikk.klar { background: var(--gronn); }
+.prikk.venter { background: var(--lys); }
+.prikk.feil { background: var(--rod); }
+
+.sekundær { height: 44px; padding: 0 14px; border: 1px solid var(--kant); border-radius: 6px; background: none; color: var(--tekst); font-size: 13px; white-space: nowrap; }
+.sekundær:hover { border-color: #46525a; background: #141a1e; }
+.sekundær.stor { height: 48px; padding: 0 18px; font-size: 14px; }
+.play { height: 56px; width: 200px; border: 0; border-radius: 6px; background: var(--lys); color: var(--lys-tekst); font-family: Archivo, sans-serif; font-weight: 800; font-size: 22px; letter-spacing: 0.08em; }
+.play:hover:not(:disabled) { background: #f0b155; }
+.play:disabled { background: #3a3122; color: #c9b896; }
+.play.i-gang { font-size: 14px; letter-spacing: 0.02em; font-family: Inter, sans-serif; font-weight: 600; }
+
+.slør { position: absolute; inset: 40px 0 0 0; background: rgba(5, 7, 8, 0.62); z-index: 4; }
+.detaljer { position: absolute; top: 40px; right: 0; bottom: 0; width: 400px; z-index: 5; background: var(--flate-detaljer); border-left: 1px solid #262e34; display: flex; flex-direction: column; }
+.detaljer[hidden], .slør[hidden], .melding[hidden], [hidden] { display: none; }
+.detaljer-topp { height: 64px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px 0 24px; border-bottom: 1px solid var(--strek); }
+.detaljer-topp h2 { margin: 0; font-family: Archivo, sans-serif; font-weight: 700; font-size: 20px; }
+.stor-ikon { width: 44px; height: 44px; }
+.rader { flex: 1; display: flex; flex-direction: column; padding: 8px 24px; }
+.rad { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--strek); }
+.rad.uten-strek { border-bottom: 0; }
+.tekst { flex: 1; min-width: 0; }
+.navn { font-weight: 600; font-size: 14px; }
+.forklaring { margin-top: 2px; font-size: 13px; line-height: 1.45; color: var(--svak); }
+/* «Performance mode»: en bryter som står på eller av. */
+.bryter { flex: none; position: relative; width: 52px; height: 30px; padding: 0; border: 1px solid var(--kant); border-radius: 15px; background: var(--flate); }
+.bryter:hover { border-color: #46525a; }
+.bryter-knott { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--svak); transition: transform 120ms ease; }
+.bryter[aria-checked="true"] { border-color: var(--lys); background: var(--lys); }
+.bryter[aria-checked="true"] .bryter-knott { transform: translateX(22px); background: var(--lys-tekst); }
+.bryter:disabled { opacity: 0.5; }
+@media (prefers-reduced-motion: reduce) { .bryter-knott { transition: none; } }
+.lenke { height: 44px; padding: 0; border: 0; background: none; color: var(--lys); font-size: 14px; }
+.lenke:hover { color: #f3c27a; text-decoration: underline; }
+.detaljer-bunn { padding: 16px 24px; border-top: 1px solid var(--strek); font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--svak); user-select: text; }
+.melding:not([hidden]) + .versjon { visibility: hidden; }

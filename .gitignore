@@ -1,0 +1,4 @@
+target/
+*.knoxlife-tmp
+java/agent/ut/
+launcher/app/gen/

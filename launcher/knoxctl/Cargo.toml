@@ -1,0 +1,10 @@
+[package]
+name = "knoxctl"
+description = "Knox Life-launcheren uten vindu: hvert steg for seg, til prøver og feilsøking"
+version.workspace = true
+edition.workspace = true
+license-file.workspace = true
+publish.workspace = true
+
+[dependencies]
+knoxlife-kjerne = { path = "../kjerne" }

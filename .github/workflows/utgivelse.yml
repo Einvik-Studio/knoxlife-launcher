@@ -1,0 +1,335 @@
+# Utgivelsen av patchen: GitHub bygger agenten med Java-modene mot spillets egen projectzomboid.jar, kjører prøvene,
+# porten og avdriftssjekken, og legger utgaven fram. Den signeres først når eierne har godkjent kjøringen i miljøet
+# «utgivelse» (bare fra main), og publiseres da som en release her: manifest.json, manifest.sig, knoxlife-agent.jar,
+# bygget.txt og SHA256SUMS.txt. Launcheren henter manifestet fra den siste releasen.
+#
+# Startes av vakten på serveren når Steam har et nytt bygg av spillet (grenen public eller unstable), eller av eierne
+# under «Actions». En patch for unstable blir en forhåndsutgave, som launcheren ikke ser. «nodmodus-pa» og «nodmodus-av»
+# bygger ingenting: den siste utgaven publiseres på nytt med et nytt byggenummer og nødmodus slått på eller av.
+#
+# Byggenummeret er kjøringens nummer, så det går bare oppover (filen må derfor aldri få et nytt navn). Signeringsnøkkelen
+# står bare i miljøet «utgivelse» og gis bare til filer denne kjøringen selv har bygget. På en PR kjøres bygget og en
+# prøveutgivelse med en nøkkel som kastes – ingenting signeres med den ekte nøkkelen og ingenting publiseres.
+#
+# Spillets jar-filer lastes aldri opp, heller ikke mellom jobbene: jobben som signerer, får bare SHA-256 og versjonen.
+# Repoet er offentlig, så kjøringene koster ingenting.
+name: Utgivelse
+
+on:
+  workflow_dispatch:
+    inputs:
+      gren:
+        description: Steam-grenen til spillet
+        type: choice
+        options: [public, unstable]
+        default: public
+      hva:
+        description: Hva som publiseres
+        type: choice
+        options: [patch, nodmodus-pa, nodmodus-av]
+        default: patch
+      nyhet:
+        description: En nyhet i launcheren, «Title|Text» på engelsk (tom for ingen)
+        type: string
+        default: ''
+  pull_request:
+    paths:
+      - '.github/workflows/utgivelse.yml'
+      - '.github/actions/hent-spillet/**'
+      - 'utgivelse/**'
+      - 'launcher/knoxctl/**'
+      - 'launcher/kjerne/src/utgivelse.rs'
+      - 'launcher/kjerne/src/manifest.rs'
+      - 'java/agent/porten/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  # Én utgivelse om gangen per gren; en PR avbryter sin forrige kjøring, en utgivelse gjør det aldri.
+  group: utgivelse-${{ github.event_name }}-${{ github.ref }}-${{ inputs.gren || 'public' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  bygg:
+    name: Bygg (${{ inputs.hva || 'patch' }}, ${{ inputs.gren || 'public' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      GREN: ${{ inputs.gren || 'public' }}
+      HVA: ${{ inputs.hva || 'patch' }}
+      KNOXLIFE_BYGG: ${{ github.run_number }}
+    outputs:
+      agent_sha256: ${{ steps.patch.outputs.agent_sha256 }}
+      versjon: ${{ steps.patch.outputs.versjon }}
+      spillet_sha256: ${{ steps.spillet.outputs.sha256 }}
+      steam_bygg: ${{ steps.spillet.outputs.bygg }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: spillet
+        if: env.HVA == 'patch'
+        uses: ./.github/actions/hent-spillet
+        with:
+          gren: ${{ env.GREN }}
+
+      # Samme Java som spillet, så porten laster klassene slik spillet gjør.
+      - if: env.HVA == 'patch'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Bygg agenten med Java-modene, prøvene, porten og avdriftssjekken mot spillet
+        if: env.HVA == 'patch'
+        run: SPILLETS_MAPPE="${{ steps.spillet.outputs.mappe }}" java/agent/bygg.sh
+
+      - name: knoxctl (lager og signerer manifestet)
+        working-directory: launcher
+        run: cargo build --locked --release -p knoxctl
+
+      - name: Patchen og bygget.txt
+        id: patch
+        env:
+          STEAM_BYGG: ${{ steps.spillet.outputs.bygg }}
+          SPILLET_SHA: ${{ steps.spillet.outputs.sha256 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/patch"
+          cp launcher/target/release/knoxctl "$RUNNER_TEMP/patch/"
+          if [ "$HVA" != patch ]; then exit 0; fi
+          cp java/agent/ut/knoxlife-agent.jar "$RUNNER_TEMP/patch/"
+          versjon=$(cat java/agent/ut/spillets-versjon.txt)
+          agent=$(sha256sum "$RUNNER_TEMP/patch/knoxlife-agent.jar" | cut -c1-64)
+          java_versjon=$(java -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java\.runtime\.version = //p')
+          java_leverandor=$(java -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java\.vendor\.version = //p')
+          # Det som trengs for å bygge patchen på nytt og sammenligne (utgivelse/bygg-pa-nytt.sh).
+          {
+            echo "bygg=$KNOXLIFE_BYGG"
+            echo "commit=$GITHUB_SHA"
+            echo "gren=$GREN"
+            echo "steam_bygg=$STEAM_BYGG"
+            echo "spillet_versjon=$versjon"
+            echo "spillet_sha256=$SPILLET_SHA"
+            echo "java=$java_versjon"
+            echo "java_leverandor=$java_leverandor"
+            echo "agent_sha256=$agent"
+          } > "$RUNNER_TEMP/patch/bygget.txt"
+          cat "$RUNNER_TEMP/patch/bygget.txt"
+          echo "agent_sha256=$agent" >> "$GITHUB_OUTPUT"
+          echo "versjon=$versjon" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Patch $KNOXLIFE_BYGG"
+            echo "- Spillet $versjon ($GREN, Steam-bygg $STEAM_BYGG)"
+            echo "- SHA-256 av \`knoxlife-agent.jar\`: \`$agent\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Attesten sier at filen ble bygget her, fra denne commiten (gh attestation verify).
+      - if: github.event_name == 'workflow_dispatch' && env.HVA == 'patch'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ runner.temp }}/patch/knoxlife-agent.jar
+
+      # På en PR: hele veien fra filene til et manifest launcheren godtar, med en nøkkel som lages og kastes her.
+      - name: Prøveutgivelse med en nøkkel som kastes
+        if: github.event_name == 'pull_request'
+        env:
+          VERSJON: ${{ steps.patch.outputs.versjon }}
+          SPILLET_SHA: ${{ steps.spillet.outputs.sha256 }}
+        run: |
+          K="$RUNNER_TEMP/patch/knoxctl"
+          cd "$RUNNER_TEMP" && mkdir prove && cd prove
+          node "$GITHUB_WORKSPACE/utgivelse/ny-nokkel.mjs" nokkel.txt > nokkel-ut.txt
+          offentlig=$(sed -n 's/.*(KNOXLIFE_MANIFEST_NOKKEL): //p' nokkel-ut.txt)
+          utgitt=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          mkdir forrige ny
+          "$K" lag-manifest forrige/manifest.json --bygg 1 --utgitt "$utgitt" --versjon 42.0.0 --spillet-sha256 "$SPILLET_SHA" \
+            --fil "$RUNNER_TEMP/patch/knoxlife-agent.jar" --server play.example.invalid:16261 --nyhet "Test|First test release."
+          KNOXLIFE_SIGNERINGSNOKKEL="$(cat nokkel.txt)" "$K" signer forrige/manifest.json
+          # Den forrige har bygg 1, så den nye får et høyere nummer også i den første kjøringen.
+          "$K" lag-manifest ny/manifest.json --bygg "$((KNOXLIFE_BYGG + 1))" --utgitt "$utgitt" --versjon "$VERSJON" \
+            --spillet-sha256 "$SPILLET_SHA" --fil "$RUNNER_TEMP/patch/knoxlife-agent.jar" --server play.example.invalid:16261 \
+            --testserver "" --status https://status.example.invalid/ --forrige forrige --nokkel "$offentlig" --nyhet ""
+          KNOXLIFE_SIGNERINGSNOKKEL="$(cat nokkel.txt)" "$K" signer ny/manifest.json | tee signert.txt
+          grep -qx "offentlig nøkkel: $offentlig" signert.txt
+          "$K" sjekk-manifest ny/manifest.json ny/manifest.sig "$offentlig"
+          grep -q "Ready for Project Zomboid $VERSJON" ny/manifest.json
+          # En endret byte, en annen nøkkel og nødmodus som alt er av, skal stoppes.
+          sed 's/"bygg": [0-9]*/"bygg": 999999/' ny/manifest.json > endret.json
+          if "$K" sjekk-manifest endret.json ny/manifest.sig "$offentlig"; then echo "::error::endret manifest ble godtatt"; exit 1; fi
+          if KNOXLIFE_SIGNERINGSNOKKEL="$(printf '1%.0s' $(seq 64))" "$K" signer ny/manifest.json | grep -qx "offentlig nøkkel: $offentlig"; then
+            echo "::error::en annen nøkkel ga samme offentlige nøkkel"; exit 1
+          fi
+          if "$K" nodmodus av nod.json --bygg 999999 --utgitt "$utgitt" --forrige forrige --nokkel "$offentlig"; then
+            echo "::error::nødmodus av ble laget mens den var av"; exit 1
+          fi
+          "$K" nodmodus på nod.json --bygg 999999 --utgitt "$utgitt" --forrige forrige --nokkel "$offentlig"
+          rm -f nokkel.txt
+          echo "Prøveutgivelsen er i orden: bygg $KNOXLIFE_BYGG for spillet $VERSJON"
+
+      # På en PR: koden fra commiten bygget en gang til, i en annen mappe, skal gi de samme bytene (3.11 punkt 3).
+      - name: Bygget på nytt fra commiten gir de samme bytene
+        if: github.event_name == 'pull_request'
+        run: utgivelse/bygg-pa-nytt.sh "$RUNNER_TEMP/patch" "${{ steps.spillet.outputs.mappe }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patch
+          path: ${{ runner.temp }}/patch
+          retention-days: 30
+          if-no-files-found: error
+
+  signer:
+    name: Signer og publiser (etter eiernes ja)
+    needs: bygg
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Miljøet krever at en av eierne godkjenner kjøringen, og bare main kan bruke det. Hemmeligheten
+    # KNOXLIFE_SIGNERINGSNOKKEL og variablene KNOXLIFE_MANIFEST_NOKKEL, KNOXLIFE_SERVER, KNOXLIFE_TESTSERVER og
+    # KNOXLIFE_STATUS står der – ikke i repoet.
+    environment: utgivelse
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GREN: ${{ inputs.gren }}
+      HVA: ${{ inputs.hva }}
+      BYGG: ${{ github.run_number }}
+      NOKKEL: ${{ vars.KNOXLIFE_MANIFEST_NOKKEL }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: patch
+          path: patch
+
+      - name: Oppsettet i miljøet
+        env:
+          SERVER: ${{ vars.KNOXLIFE_SERVER }}
+          HAR_NOKKEL: ${{ secrets.KNOXLIFE_SIGNERINGSNOKKEL != '' }}
+        run: |
+          chmod +x patch/knoxctl
+          mangler=""
+          [ -n "$NOKKEL" ] || mangler="$mangler KNOXLIFE_MANIFEST_NOKKEL"
+          [ -n "$SERVER" ] || mangler="$mangler KNOXLIFE_SERVER"
+          [ "$HAR_NOKKEL" = true ] || mangler="$mangler KNOXLIFE_SIGNERINGSNOKKEL"
+          if [ -n "$mangler" ]; then
+            echo "::error::Mangler i miljøet «utgivelse»:$mangler"
+            exit 1
+          fi
+
+      - name: Den siste utgaven
+        run: |
+          mkdir -p forrige
+          if tag=$(gh release view --repo "$REPO" --json tagName -q .tagName 2>/dev/null); then
+            gh release download "$tag" --repo "$REPO" --dir forrige \
+              -p manifest.json -p manifest.sig -p knoxlife-agent.jar -p bygget.txt
+            echo "Den siste utgaven: $tag"
+          else
+            echo "Ingen utgave ennå – dette er den første."
+          fi
+
+      - name: Manifestet
+        env:
+          SERVER: ${{ vars.KNOXLIFE_SERVER }}
+          TESTSERVER: ${{ vars.KNOXLIFE_TESTSERVER }}
+          STATUS: ${{ vars.KNOXLIFE_STATUS }}
+          NYHET: ${{ inputs.nyhet }}
+          VERSJON: ${{ needs.bygg.outputs.versjon }}
+          SPILLET_SHA: ${{ needs.bygg.outputs.spillet_sha256 }}
+          AGENT_SHA: ${{ needs.bygg.outputs.agent_sha256 }}
+        run: |
+          utgitt=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          forrige=()
+          if [ -f forrige/manifest.json ]; then forrige=(--forrige forrige --nokkel "$NOKKEL"); fi
+          mkdir ut
+          case "$HVA" in
+            patch)
+              if [ "$(sha256sum patch/knoxlife-agent.jar | cut -c1-64)" != "$AGENT_SHA" ]; then
+                echo "::error::Agenten er ikke den bygget-jobben laget."; exit 1
+              fi
+              patch/knoxctl lag-manifest ut/manifest.json --bygg "$BYGG" --utgitt "$utgitt" --versjon "$VERSJON" \
+                --spillet-sha256 "$SPILLET_SHA" --fil patch/knoxlife-agent.jar --server "$SERVER" \
+                --testserver "$TESTSERVER" --status "$STATUS" "${forrige[@]}" --nyhet "$NYHET"
+              cp patch/knoxlife-agent.jar patch/bygget.txt ut/ ;;
+            nodmodus-pa|nodmodus-av)
+              if [ ! -f forrige/manifest.json ]; then echo "::error::Ingen utgave å slå nødmodus på eller av for."; exit 1; fi
+              patch/knoxctl nodmodus "${HVA#nodmodus-}" ut/manifest.json --bygg "$BYGG" --utgitt "$utgitt" "${forrige[@]}"
+              # Den samme agenten som i den siste utgaven, sjekket mot det signerte manifestet.
+              agent=$(jq -r '.filer[] | select(.navn == "knoxlife-agent.jar") | .sha256' ut/manifest.json)
+              if [ "$(sha256sum forrige/knoxlife-agent.jar | cut -c1-64)" != "$agent" ]; then
+                echo "::error::Agenten i den siste utgaven stemmer ikke med manifestet."; exit 1
+              fi
+              cp forrige/knoxlife-agent.jar forrige/bygget.txt ut/ ;;
+            *) echo "::error::Ukjent valg: $HVA"; exit 1 ;;
+          esac
+
+      - name: Signer
+        env:
+          KNOXLIFE_SIGNERINGSNOKKEL: ${{ secrets.KNOXLIFE_SIGNERINGSNOKKEL }}
+        run: |
+          patch/knoxctl signer ut/manifest.json | tee signert.txt
+          if ! grep -qx "offentlig nøkkel: $NOKKEL" signert.txt; then
+            echo "::error::KNOXLIFE_SIGNERINGSNOKKEL passer ikke med KNOXLIFE_MANIFEST_NOKKEL – launcheren ville ikke godtatt utgaven."
+            exit 1
+          fi
+          patch/knoxctl sjekk-manifest ut/manifest.json ut/manifest.sig "$NOKKEL"
+          (cd ut && sha256sum knoxlife-agent.jar manifest.json manifest.sig bygget.txt > SHA256SUMS.txt)
+          cat ut/SHA256SUMS.txt
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ut/manifest.json
+
+      - name: Publiser
+        env:
+          STEAM_BYGG: ${{ needs.bygg.outputs.steam_bygg }}
+        run: |
+          versjon=$(jq -r .spillet.versjon ut/manifest.json)
+          spillet=$(jq -r .spillet.jar_sha256 ut/manifest.json)
+          agent_bygg=$(sed -n 's/^bygg=//p' ut/bygget.txt)
+          flagg=(--latest)
+          case "$HVA" in
+            patch)
+              tittel="Patch $BYGG for Project Zomboid $versjon"
+              if [ "$GREN" = unstable ]; then
+                flagg=(--prerelease)
+                tittel="$tittel (unstable)"
+              fi
+              {
+                echo "Knox Life patch $BYGG for Project Zomboid $versjon ($GREN branch, Steam build $STEAM_BYGG)."
+                echo
+                echo "- Built by GitHub from commit $GITHUB_SHA and signed after the owners approved it."
+              } > notater.md ;;
+            nodmodus-pa)
+              tittel="Patch $BYGG – emergency mode on"
+              {
+                echo "Emergency mode: the launcher starts Project Zomboid without the Knox Life patch for now."
+                echo
+                echo "- Same files as patch $agent_bygg, signed after the owners approved it."
+              } > notater.md ;;
+            nodmodus-av)
+              tittel="Patch $BYGG – emergency mode off"
+              {
+                echo "Emergency mode is off: the launcher uses the Knox Life patch again."
+                echo
+                echo "- Same files as patch $agent_bygg, signed after the owners approved it."
+              } > notater.md ;;
+          esac
+          {
+            echo "- \`projectzomboid.jar\` SHA-256: \`$spillet\`"
+            echo "- Check where a file came from: \`gh attestation verify knoxlife-agent.jar --repo $REPO\`"
+            echo "- Build it yourself and compare byte for byte: \`utgivelse/bygg-pa-nytt.sh patch-$agent_bygg <folder with projectzomboid.jar>\`"
+          } >> notater.md
+          gh release create "patch-$BYGG" ut/manifest.json ut/manifest.sig ut/knoxlife-agent.jar ut/bygget.txt ut/SHA256SUMS.txt \
+            --repo "$REPO" --target "$GITHUB_SHA" --title "$tittel" --notes-file notater.md "${flagg[@]}"
+          {
+            echo "### Publisert: $tittel"
+            cat notater.md
+          } >> "$GITHUB_STEP_SUMMARY"

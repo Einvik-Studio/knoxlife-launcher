@@ -1,0 +1,50 @@
+# Porten mot det ekte spillet: henter spillets egen projectzomboid.jar fra den dedikerte serveren (Steam-app 380870,
+# anonym innlogging – den samme jar-filen spillerne har) og starter agenten mot den. Kan én av Java-modene ikke legges
+# inn, stopper jobben.
+#
+# Jar-filen er spillets, ikke vår: den lastes aldri opp, publiseres aldri og legges aldri i repoet. Den ligger bare i
+# GitHubs mellomlager for denne jobben, nøklet på Steams byggenummer.
+name: Porten mot spillet
+
+on:
+  workflow_dispatch:
+    inputs:
+      gren:
+        description: Steam-grenen til spillet (public eller unstable)
+        default: public
+  pull_request:
+    paths: ['java/**', '.github/workflows/spillet.yml', '.github/actions/hent-spillet/**']
+  push:
+    branches: [main]
+    paths: ['java/**', '.github/workflows/spillet.yml', '.github/actions/hent-spillet/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spillet-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  porten:
+    name: Porten (${{ inputs.gren || 'public' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GREN: ${{ inputs.gren || 'public' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: spillet
+        uses: ./.github/actions/hent-spillet
+        with:
+          gren: ${{ env.GREN }}
+
+      # Samme Java som spillet, så porten laster klassene slik spillet gjør.
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Bygg agenten og kjør porten mot spillet
+        run: SPILLETS_MAPPE="${{ steps.spillet.outputs.mappe }}" java/agent/bygg.sh

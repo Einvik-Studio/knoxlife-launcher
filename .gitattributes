@@ -1,0 +1,5 @@
+# Skriptene og listene leses av bash også på Windows: alltid LF.
+*.sh text eol=lf
+*.lock text eol=lf
+*.txt text eol=lf
+*.json text eol=lf
