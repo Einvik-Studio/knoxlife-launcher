@@ -2,11 +2,14 @@
 //!
 //! - **Billetten** (`Zomboid/KnoxLife/reise.txt`): serverens adresse og en engangsbillett. Agenten leser den ved oppstart,
 //!   kobler rett til serveren og sletter den.
+//! - **Serverne** (`Zomboid/KnoxLife/servere.txt`): Knox Lifes servere fra det signerte manifestet, `navn=adresse:port`.
+//!   Agenten sender spillet bare til dem (J5, testserveren).
 //! - **Stempelet** (`Zomboid/KnoxLife/stempel.txt`): agenten skriver at den er lastet, med byggenummeret.
 //! - **Vakten**: de første 90 sekundene avgjøres ingenting – Steam starter spillet i flere steg, og en prosess kan komme,
 //!   forsvinne og komme igjen. Kommer ikke stempelet innen 5 minutter, er patchen ikke lastet.
 
 use crate::feil::Resultat;
+use crate::manifest::Manifest;
 use crate::spillet::{Plattform, APP_ID};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -78,6 +81,26 @@ pub fn skriv_billett(knox: &Path, b: &Billett) -> Resultat<()> {
     let tmp = knox.join("reise.txt.tmp");
     fs::write(&tmp, tekst)?;
     fs::rename(tmp, billett_sti(knox))?;
+    Ok(())
+}
+
+pub fn servere_sti(knox: &Path) -> PathBuf {
+    knox.join("servere.txt")
+}
+
+/// Skriver listen over Knox Lifes servere fra manifestet: `hoved` og `test` (når den finnes). En adresse agenten ikke
+/// ville godta, står ikke med.
+pub fn skriv_servere(knox: &Path, m: &Manifest) -> Resultat<()> {
+    let mut tekst = String::new();
+    for (navn, s) in [("hoved", Some(&m.server)), ("test", m.testserver.as_ref())] {
+        if let Some(s) = s.filter(|s| s.trygg()) {
+            tekst.push_str(&format!("{navn}={}:{}\n", s.adresse, s.port));
+        }
+    }
+    fs::create_dir_all(knox)?;
+    let tmp = knox.join("servere.txt.tmp");
+    fs::write(&tmp, tekst)?;
+    fs::rename(tmp, servere_sti(knox))?;
     Ok(())
 }
 
@@ -187,6 +210,21 @@ mod prøver {
         skriv_billett(m.sti(), &b).unwrap();
         let tekst = fs::read_to_string(billett_sti(m.sti())).unwrap();
         assert_eq!(tekst, "adresse=play.example.invalid\nport=16261\nbillett=abc123port=1\n");
+    }
+
+    #[test]
+    fn serverne_fra_manifestet() {
+        let m = Mappe::ny();
+        let mut man = crate::manifest::prøver::eksempel(7);
+        skriv_servere(m.sti(), &man).unwrap();
+        assert_eq!(fs::read_to_string(servere_sti(m.sti())).unwrap(), "hoved=play.example.invalid:16261\n");
+        man.testserver = Some(crate::manifest::Server { adresse: "10.0.0.6".into(), port: 16271 });
+        skriv_servere(m.sti(), &man).unwrap();
+        assert_eq!(fs::read_to_string(servere_sti(m.sti())).unwrap(), "hoved=play.example.invalid:16261\ntest=10.0.0.6:16271\n");
+        // En hovedadresse agenten ikke godtar, står ikke med (den brukes bare til billetten).
+        man.server.adresse = "[::1]".into();
+        skriv_servere(m.sti(), &man).unwrap();
+        assert_eq!(fs::read_to_string(servere_sti(m.sti())).unwrap(), "test=10.0.0.6:16271\n");
     }
 
     #[test]

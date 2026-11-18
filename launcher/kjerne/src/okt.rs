@@ -141,9 +141,11 @@ pub fn kjør(o: &Oppsett, nett: &dyn Nett, maskin: &dyn Maskin, steg: &mut dyn F
     };
     nedlasting::rydd_gamle(o.tilstand, Some(m.bygg))?;
 
-    // 7. Patchen legges inn. Et gammelt stempel fjernes først, så det aldri tas for et nytt.
+    // 7. Patchen legges inn. Et gammelt stempel fjernes først, så det aldri tas for et nytt. Listen over serverne
+    // (J5) skrives på nytt hver gang, så den alltid er den fra det siste manifestet.
     si(Steg::LeggerInn);
     start::fjern_stempel(&knox)?;
+    start::skriv_servere(&knox, &m)?;
     let agent = mappe.join(AGENT_FIL);
     let stempel = start::stempel_sti(&knox);
     patch::legg_inn(

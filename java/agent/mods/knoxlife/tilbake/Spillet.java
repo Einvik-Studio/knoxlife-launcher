@@ -17,12 +17,29 @@ import zombie.ui.UIElement;
  * {@code client/OptionScreens/ConnectToServer.lua}), akkurat som når spilleren trykker «Join»: spillerne ser den
  * vanlige skjermen med «Abort», og spillets egne beskjeder (nedlasting av mods, køen) står som før.
  *
+ * <p>J5 (launcher.md 3.6 punkt 3): {@link Tilbake#fraSpillet()} får innloggingen spillet har nå herfra, når modet sender
+ * spilleren til testserveren – den samme veien gjennom hovedmenyen tar spillet dit.
+ *
  * <p>Feiler noe her, stopper J6 for denne gangen og sier fra i konsollen – spillet går videre som uten Java-moden.
  */
 public final class Spillet {
     private static boolean feilet;
 
+    static {
+        Tilbake.leser(Spillet::innlogging);
+    }
+
     private Spillet() {}
+
+    /** Innloggingen spillet har i minnet ({@code GameClient}), eller {@code null} når det ikke er koblet til noe. */
+    static Tilbake.Innlogging innlogging() {
+        if (GameClient.username == null || GameClient.ip == null || GameClient.ip.isBlank()) {
+            return null;
+        }
+        return new Tilbake.Innlogging(GameClient.username, tom(GameClient.password), GameClient.ip,
+                tom(GameClient.localIP), String.valueOf(GameClient.port), tom(GameClient.serverPassword),
+                tom(GameClient.serverName), GameClient.useSteamRelay, GameClient.authType);
+    }
 
     private static long nå() {
         return System.nanoTime() / 1_000_000L;
@@ -35,13 +52,7 @@ public final class Spillet {
     /** {@code ServerDisconnectState.enter}, før spillet viser skjermen. */
     public static void vedBrudd() {
         try {
-            Tilbake.Innlogging inn = null;
-            if (GameClient.username != null && GameClient.ip != null && !GameClient.ip.isBlank()) {
-                inn = new Tilbake.Innlogging(GameClient.username, tom(GameClient.password), GameClient.ip,
-                        tom(GameClient.localIP), String.valueOf(GameClient.port), tom(GameClient.serverPassword),
-                        tom(GameClient.serverName), GameClient.useSteamRelay, GameClient.authType);
-            }
-            if (Tilbake.SPILLET.brudd(nå(), GameWindow.kickReason, inn)) {
+            if (Tilbake.SPILLET.brudd(nå(), GameWindow.kickReason, innlogging())) {
                 // Teksten midt på skjermen er grunnen spillet viser (ServerDisconnectState.render).
                 GameWindow.kickReason = Tilbake.SPILLET.skjermtekst();
             }

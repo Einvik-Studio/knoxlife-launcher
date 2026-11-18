@@ -36,6 +36,10 @@ pub struct Manifest {
     pub spillet: Spillversjon,
     pub filer: Vec<Fil>,
     pub server: Server,
+    /// Testserveren (3.6 punkt 3): staff kan sende en kopi av en karakter dit, og spillet går dit av seg selv. Bare
+    /// serverne i det signerte manifestet kan spillet sendes til.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub testserver: Option<Server>,
     /// Nødmodus (3.9 punkt 9): spillet startes uten patch.
     #[serde(default, rename = "nodmodus")]
     pub nødmodus: bool,
@@ -79,6 +83,16 @@ pub struct Fil {
 pub struct Server {
     pub adresse: String,
     pub port: u16,
+}
+
+impl Server {
+    /// Et vertsnavn eller en IPv4-adresse: bokstaver, tall, `.` og `-` – det agenten godtar i listen over serverne.
+    pub fn trygg(&self) -> bool {
+        !self.adresse.is_empty()
+            && self.adresse.len() <= 253
+            && self.adresse.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+            && self.port != 0
+    }
 }
 
 /// Den innebygde nøkkelen, eller `None` når launcheren er bygget uten (en prøvebygging).
@@ -128,6 +142,9 @@ impl Manifest {
         }
         if self.server.adresse.trim().is_empty() || self.server.adresse.contains(char::is_whitespace) {
             return feil("server address");
+        }
+        if self.testserver.as_ref().is_some_and(|t| !t.trygg() || (t.adresse == self.server.adresse && t.port == self.server.port)) {
+            return feil("test server address");
         }
         if self.filer.is_empty() {
             return feil("no files");
@@ -211,6 +228,7 @@ pub(crate) mod prøver {
             spillet: Spillversjon { versjon: "42.22.2".into(), jar_sha256: "ab".repeat(32) },
             filer: vec![Fil { navn: AGENT_FIL.into(), sha256: "cd".repeat(32), størrelse: 1234 }],
             server: Server { adresse: "play.example.invalid".into(), port: 16261 },
+            testserver: None,
             nødmodus: false,
             nyheter: Vec::new(),
         }
@@ -300,6 +318,22 @@ pub(crate) mod prøver {
         assert!(m.sjekk().is_err());
         m.nyheter = vec![Nyhet { dato: "d".into(), tittel: "t".into(), tekst: String::new() }; FLEST_NYHETER + 1];
         assert!(m.sjekk().is_err());
+    }
+
+    #[test]
+    fn testserveren_leses_og_sjekkes() {
+        let n = nøkkelpar();
+        let mut m = eksempel(7);
+        m.testserver = Some(Server { adresse: "10.0.0.6".into(), port: 16271 });
+        let (json, sig) = signer(&m, &n);
+        assert_eq!(Manifest::les_signert(&json, &sig, &n.verifying_key()).unwrap().testserver, m.testserver);
+        // Uten testserver står feltet ikke i manifestet – det første formatet leses som før.
+        let (json, _) = signer(&eksempel(7), &n);
+        assert!(!String::from_utf8(json).unwrap().contains("testserver"));
+        for (adresse, port) in [("", 16271), ("a b", 16271), ("[::1]", 16271), ("host:1", 16271), ("ok.example", 0), ("play.example.invalid", 16261)] {
+            m.testserver = Some(Server { adresse: adresse.into(), port });
+            assert!(matches!(m.sjekk(), Err(Feil::Manifest(_))), "{adresse}:{port}");
+        }
     }
 
     #[test]

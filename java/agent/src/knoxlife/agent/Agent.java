@@ -8,8 +8,8 @@ import java.time.Instant;
 /**
  * Knox Life-agenten. Java laster den før spillet ({@code -javaagent:} først i spillets valg, lagt inn av launcheren).
  *
- * <p>I denne rekkefølgen: juksesperren ser gjennom Java-en, billetten hentes, Mixin startes med Java-modene våre, og
- * stempelet skrives til slutt – så launcheren bare ser «lastet» når alt over gikk bra.
+ * <p>I denne rekkefølgen: juksesperren ser gjennom Java-en, billetten og listen over serverne hentes, Mixin startes med
+ * Java-modene våre, og stempelet skrives til slutt – så launcheren bare ser «lastet» når alt over gikk bra.
  */
 public final class Agent {
     private static volatile boolean startet;
@@ -31,6 +31,12 @@ public final class Agent {
             KnoxLife.del("juksesperre");
             if (stempel != null) {
                 KnoxLife.settBillett(Billett.hent(stempel.resolveSibling("reise.txt"), Instant.now()));
+                // J5: serverne launcheren kjenner. Uten listen kan spillet ikke gå over til testserveren.
+                Servere servere = Servere.les(stempel.resolveSibling("servere.txt"));
+                if (servere != null) {
+                    KnoxLife.settServere(servere);
+                    KnoxLife.del("reise");
+                }
             }
             knoxlife.agent.mixin.Start.start(inst);
             if (stempel != null) {

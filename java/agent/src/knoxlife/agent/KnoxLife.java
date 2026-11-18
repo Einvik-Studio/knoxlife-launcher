@@ -18,6 +18,7 @@ public final class KnoxLife {
     private static volatile long bygg;
     private static volatile List<String> funn = List.of();
     private static volatile Billett billett;
+    private static volatile Servere servere;
     private static final List<String> FEIL = Collections.synchronizedList(new ArrayList<>());
     private static final Set<String> DELER = ConcurrentHashMap.newKeySet();
     private static final Set<String> ENDRET = ConcurrentHashMap.newKeySet();
@@ -39,6 +40,16 @@ public final class KnoxLife {
 
     static void settBillett(Billett b) {
         billett = b;
+    }
+
+    static void settServere(Servere s) {
+        servere = s;
+    }
+
+    /** Knox Lifes server med navnet fra launcherens liste ({@link Servere}), eller {@code null}. */
+    public static Servere.Server server(String navn) {
+        Servere s = servere;
+        return s == null ? null : s.finn(navn);
     }
 
     /** En Java-mod som ikke kunne legges inn. Skrives i spillets konsoll og sier fra i rapporten. */

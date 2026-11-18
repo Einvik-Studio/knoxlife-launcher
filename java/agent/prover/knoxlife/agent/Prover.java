@@ -330,6 +330,125 @@ public final class Prover {
         lik(Tilbake.BRUDD, t.skjermtekst());
     }
 
+    // ---------- J5: overgangen til testserveren ----------
+
+    static final Servere.Server TEST = new Servere.Server("test", "10.0.0.6", 16271);
+
+    static void prøveServereFraLauncheren() {
+        var s = Servere.tolk("hoved=play.example.org:16261\r\ntest=10.0.0.6:16271\n\n# kommentar\nTEST=x:1\nfeil=:16261\n"
+                + "port=a.b:0\nport2=a.b:99999\nrom=a b:16261\nhoved=annen.example.org:1\n");
+        lik(2, s.alle().size());
+        lik(new Servere.Server("hoved", "play.example.org", 16261), s.finn("hoved"));
+        lik(new Servere.Server("test", "10.0.0.6", 16271), s.finn("test"));
+        lik(null, s.finn("TEST"));
+        lik(null, s.finn(null));
+        lik(null, Servere.tolk(""));
+        lik(null, Servere.tolk("ingenting her"));
+        lik("the Knox Life test server", s.finn("test").tittel());
+        lik("Knox Life", s.finn("hoved").tittel());
+        StringBuilder mange = new StringBuilder();
+        for (char c = 'a'; c < 'a' + 12; c++) {
+            mange.append(c).append("=h:1\n");
+        }
+        lik(Servere.FLEST, Servere.tolk(mange.toString()).alle().size());
+    }
+
+    static void prøveServereLesesFraFilenOgBlirStående() throws Exception {
+        Path fil = tom.resolve("servere.txt");
+        lik(null, Servere.les(fil));
+        Files.writeString(fil, "test=10.0.0.6:16271\n");
+        lik(TEST, Servere.les(fil).finn("test"));
+        sant(Files.exists(fil), "listen står til launcheren skriver den på nytt");
+        Files.writeString(fil, "x".repeat(5000));
+        lik(null, Servere.les(fil));
+    }
+
+    static void prøveReiseGårTilTestserverenMedDenSammeInnloggingen() {
+        var t = new Tilbake();
+        sant(!t.reise(0, inn(), TEST), "bare på Knox Life");
+        t.påKnoxLife();
+        sant(!t.reise(0, null, TEST), "uten innlogging");
+        sant(!t.reise(0, inn(), null), "uten mål");
+        sant(t.reise(1_000, inn(), TEST), "på Knox Life med mål");
+        lik(Tilbake.Fase.MENYEN, t.fase());
+        lik(TEST, t.reisemål());
+        var i = t.innlogging();
+        lik("ola", i.bruker());
+        lik("hemmelig-hash", i.passord());
+        lik("10.0.0.6", i.ip());
+        lik("16271", i.port());
+        lik("", i.serverpassord());
+        lik(false, i.steamRelay());
+        lik(1, i.autentisering());
+        lik("Going to the Knox Life test server – connecting automatically.", t.skjermtekst());
+        // Hovedmenyen: spillet kobler til testserveren med en gang den er klar.
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(1_500, LASTER).handling());
+        var s = t.iMenyen(2_000, MENYEN);
+        lik(Tilbake.Handling.KOBLE_TIL, s.handling());
+        sant(s.tekst().startsWith("Going to the Knox Life test server"), s.tekst());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(2_100, KOBLER).handling());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(9_000, INNE).handling());
+        lik(Tilbake.Fase.FERDIG, t.fase());
+        // Inne på testserveren: modet sier at dette er Knox Life, og et brudd der gir veien tilbake til den.
+        t.påKnoxLife();
+        lik(null, t.reisemål());
+        sant(t.brudd(20_000, null, new Tilbake.Innlogging("ola", "h", "10.0.0.6", "", "16271", "", "", false, 1)), "brudd på testserveren");
+        lik(Tilbake.BRUDD, t.skjermtekst());
+        lik("10.0.0.6", t.innlogging().ip());
+    }
+
+    static void prøveReiseMedSkjermenVedBruddet() {
+        // Viser spillet skjermen for bruddet på vei ut, står målet: teksten sier hvor det går, og så hovedmenyen.
+        var t = new Tilbake();
+        t.påKnoxLife();
+        t.reise(0, inn(), TEST);
+        sant(t.brudd(500, "Server stopped.", inn()), "brudd på vei ut");
+        lik(Tilbake.Fase.SKJERMEN, t.fase());
+        lik(TEST, t.reisemål());
+        lik("Going to the Knox Life test server – connecting automatically.", t.skjermtekst());
+        sant(!t.tilMenyen(2_000), "skjermen står litt");
+        sant(t.tilMenyen(Tilbake.PÅ_SKJERMEN_MS), "så hovedmenyen");
+        lik(Tilbake.Handling.KOBLE_TIL, t.iMenyen(4_000, MENYEN).handling());
+        lik("10.0.0.6", t.innlogging().ip());
+    }
+
+    static void prøveReiseGirOppNårBillettenErUte() {
+        var t = new Tilbake();
+        t.påKnoxLife();
+        t.reise(0, inn(), TEST);
+        t.iMenyen(1_000, MENYEN);
+        t.iMenyen(1_100, FEILET);
+        lik(Tilbake.Fase.VENTER, t.fase());
+        lik(Tilbake.Handling.KOBLE_TIL, t.iMenyen(Tilbake.REISE_FRIST_MS, FEILET).handling()); // det siste forsøket
+        var s = t.iMenyen(Tilbake.REISE_FRIST_MS + 100, FEILET);
+        lik(Tilbake.Fase.GITT_OPP, t.fase());
+        lik("The Knox Life test server did not let you in. Join Knox Life again from the server list.", s.tekst());
+        lik(Tilbake.Handling.VIS_TEKST, t.iMenyen(Tilbake.REISE_FRIST_MS + 1_000, FEILET).handling());
+        // Et brudd etterpå er et vanlig brudd (spilleren kom inn på hovedserveren selv og mistet forbindelsen).
+        t.påKnoxLife();
+        sant(t.brudd(Tilbake.REISE_FRIST_MS + 60_000, null, inn()), "vanlig brudd");
+        lik(Tilbake.BRUDD, t.skjermtekst());
+        lik("10.0.0.5", t.innlogging().ip());
+    }
+
+    static void prøveReiseSomBleLiggendeGjelderIkkeEtBruddSenere() {
+        // Spillet gikk aldri til menyen (noe feilet): et brudd etter fristen er et vanlig brudd.
+        var t = new Tilbake();
+        t.påKnoxLife();
+        t.reise(0, inn(), TEST);
+        sant(t.brudd(Tilbake.REISE_FRIST_MS, null, inn()), "brudd lenge etter");
+        lik(null, t.reisemål());
+        lik(Tilbake.BRUDD, t.skjermtekst());
+        lik("10.0.0.5", t.innlogging().ip());
+    }
+
+    static void prøveReiseFraLuaUtenListeEllerSpilletSierNei() {
+        // Uten listen fra launcheren (eller uten Java-modene for spillet) går ingen reise.
+        lik(false, KnoxLifeJava.reise("test"));
+        lik(false, KnoxLifeJava.reise(null));
+        lik(null, Tilbake.fraSpillet()); // knoxlife.tilbake.Spillet er ikke bygget inn i prøvene
+    }
+
     static void prøveTilbakeViserAldriPassordet() {
         sant(!inn().toString().contains("hemmelig"), inn().toString());
     }
