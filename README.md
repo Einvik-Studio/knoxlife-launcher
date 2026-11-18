@@ -87,7 +87,8 @@ off. Staff can turn it on for a few minutes when you report lag; it then records
 and how many frames were slow – nothing about you, your folders or your PC – and the mod sends that to the server.
 
 The server can also give the game a list of event functions to skip, for mod functions that only matter with zombies.
-Every entry names the mod, the file and the line, with the reason.
+Every entry names the mod, the file and the line, with the reason. The list and the timing only apply while you are on
+Knox Life: both are cleared as soon as the game is back in the main menu, so other servers get the game as it is.
 
 ## Building and testing
 

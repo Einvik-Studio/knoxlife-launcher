@@ -229,6 +229,24 @@ public final class Profil {
         return låst;
     }
 
+    /**
+     * Hovedmenyen hos spilleren ({@code TilbakeMenyMixin}, hvert bilde): listen over hendelser som hoppes over, og
+     * profileren gjelder bare mens spilleren er på Knox Life. Ute av serveren tømmes listen og profileren slås av – en
+     * annen server får spillet som det er, og modet gir listen på nytt neste gang spilleren kommer inn. Ikke på
+     * serveren (låst). Billig når det ikke er noe å gjøre.
+     */
+    public void iMenyen() {
+        if (låst || (!på && !hopperOver)) {
+            return;
+        }
+        synchronized (this) {
+            på = false;
+            hopp = List.of();
+            hoppNr++;
+            hopperOver = false;
+        }
+    }
+
     /** Ny liste over hendelser som hoppes over (J9). Gir linjene som ble tatt med. */
     public synchronized List<Hopp> hopp(List<Hopp> nye) {
         List<Hopp> l = new ArrayList<>();

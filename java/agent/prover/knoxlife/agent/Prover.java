@@ -605,6 +605,27 @@ public final class Prover {
         lik(Profil.FLEST_HOPP, p.hopp(mange).size());
     }
 
+    static void prøveMenyenTømmerListenOgSlårAvProfileren() {
+        Profil p = new Profil();
+        p.på(true, 0);
+        p.hopp(java.util.List.of(new Profil.Hopp("OnTick", "M", "f.lua", 1, "grunn")));
+        p.iMenyen();
+        sant(!p.på(), "profileren er av");
+        lik(0, p.hopp().size());
+        // Funksjonen på listen kalles igjen (ute av Knox Life).
+        Object f = new Object();
+        p.navngi(x -> new Profil.Funksjon("M", "f.lua", 1));
+        sant(p.før("OnTick", "OnTick", f) != null, "kalles");
+        // Serveren: ingenting endres.
+        Profil s = new Profil();
+        s.på(true, 0);
+        s.hopp(java.util.List.of(new Profil.Hopp("OnTick", "M", "f.lua", 1, "grunn")));
+        s.lås();
+        s.iMenyen();
+        sant(s.på(), "står på");
+        lik(1, s.hopp().size());
+    }
+
     static void prøveProfilenFraLuaHosSpillerenOgLåstPåServeren() {
         // Hos spilleren: modet slår den på og henter minuttet.
         lik(null, KnoxLifeJava.profilMinutt());
