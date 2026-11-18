@@ -8,6 +8,12 @@ reserved (see [LICENSE](LICENSE)).
 
 > Status: in development. Nothing here is released yet.
 
+![The Knox Life launcher, ready to play](docs/vinduet/klar.png)
+
+More screenshots (with example news): [Details](docs/vinduet/details.png),
+[downloading](docs/vinduet/laster-ned.png), [new game version](docs/vinduet/ny-spillversjon.png),
+[no connection](docs/vinduet/uten-nett.png), [game not found](docs/vinduet/uten-spillet.png).
+
 ## What the launcher does when you press Play
 
 1. **Cleans up first.** If the launcher was closed while the game was running (crash, power cut), it puts the game
