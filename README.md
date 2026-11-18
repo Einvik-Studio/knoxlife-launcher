@@ -67,6 +67,16 @@ class loader, Java options in environment variables, extra files on the class pa
 path, and whether tools can attach to the game after it has started. It sends at most 8 findings, each at most 96
 characters, with **file names only – never folder paths**, so nothing about your folders or user name leaves your PC.
 
+## Back in after a restart
+
+When the connection to Knox Life drops – the server restarts, or the network or the server goes down – the game shows
+"Server restarting" (or "Connection to Knox Life lost") for 3 seconds, goes to the main menu by itself and joins the
+same server again through the game's own connect screen, every 15 seconds for up to 15 minutes. Press "Abort" on that
+screen to stop. Nothing happens if you were kicked or banned, or on any other server.
+
+To join again, the game uses the login it already has in memory from when you joined (the password as the game stores
+it after hashing). It is never written to disk or to any log.
+
 ## Building and testing
 
 ```sh

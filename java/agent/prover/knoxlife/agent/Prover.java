@@ -202,4 +202,135 @@ public final class Prover {
         }
         lik(KnoxLife.FLEST_HENDELSER, igjen);
     }
+
+    // ---------- J6: ny tilkobling etter omstart ----------
+
+    static Tilbake.Innlogging inn() {
+        return new Tilbake.Innlogging("ola", "hemmelig-hash", "10.0.0.5", "", "16261", "", "Knox Life", false, 1);
+    }
+
+    static final Tilbake.Meny MENYEN = new Tilbake.Meny(true, false, false, false);
+    static final Tilbake.Meny LASTER = new Tilbake.Meny(false, false, false, false);
+    static final Tilbake.Meny KOBLER = new Tilbake.Meny(false, true, true, false);
+    static final Tilbake.Meny FEILET = new Tilbake.Meny(false, false, true, false);
+    static final Tilbake.Meny INNE = new Tilbake.Meny(false, false, false, true);
+    static final Tilbake.Meny AVBRUTT = new Tilbake.Meny(true, false, false, false);
+
+    static void prøveTilbakeEtterOmstartKoblerTilHvert15Sekund() {
+        var t = new Tilbake();
+        t.påKnoxLife();
+        t.omstart(true);
+        sant(t.brudd(0, null, inn()), "Knox Life skal ta over etter en omstart");
+        lik(Tilbake.OMSTART, t.skjermtekst());
+        sant(!t.tilMenyen(2_999), "skjermen vises i 3 sekunder");
+        sant(t.tilMenyen(3_000), "så går spillet til hovedmenyen");
+        sant(!t.tilMenyen(3_001), "bare én gang");
+
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(3_050, LASTER).handling());
+        var s = t.iMenyen(3_100, MENYEN);
+        lik(Tilbake.Handling.KOBLE_TIL, s.handling());
+        lik(1, t.forsøk());
+        sant(s.tekst().startsWith(Tilbake.OMSTART), s.tekst());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(3_200, KOBLER).handling()); // spillets egne beskjeder står
+
+        // Forsøket feilet (serveren er ikke oppe ennå): vent 15 sekunder.
+        s = t.iMenyen(10_000, FEILET);
+        lik(Tilbake.Fase.VENTER, t.fase());
+        sant(s.tekst().endsWith("Next try in 15 s."), s.tekst());
+        sant(t.iMenyen(17_000, FEILET).tekst().endsWith("Next try in 8 s."), "nedtellingen");
+        lik(Tilbake.Handling.KOBLE_TIL, t.iMenyen(25_000, FEILET).handling());
+        lik(2, t.forsøk());
+
+        // Andre forsøk går gjennom: skjermen lukker seg og spillet er koblet til.
+        t.iMenyen(26_000, KOBLER);
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(27_000, INNE).handling());
+        lik(Tilbake.Fase.FERDIG, t.fase());
+        lik(null, t.innlogging());
+        sant(!t.iGang(), "ferdig");
+    }
+
+    static void prøveTilbakeNårSpillerenGårTilMenyenSelv() {
+        var t = new Tilbake();
+        t.påKnoxLife();
+        t.brudd(0, null, inn());
+        // Spilleren trykket «Exit to main menu» før de 3 sekundene var gått.
+        lik(Tilbake.Handling.KOBLE_TIL, t.iMenyen(1_000, MENYEN).handling());
+        sant(!t.tilMenyen(5_000), "skjermen er alt borte");
+    }
+
+    static void prøveTilbakeGirOppEtter15Minutter() {
+        var t = new Tilbake();
+        t.påKnoxLife();
+        sant(t.brudd(0, "", inn()), "et brudd uten grunn");
+        lik(Tilbake.BRUDD, t.skjermtekst());
+        t.tilMenyen(3_000);
+        t.iMenyen(3_000, MENYEN);
+        var s = t.iMenyen(Tilbake.FRIST_MS, FEILET);
+        lik(Tilbake.GITT_OPP, s.tekst());
+        lik(Tilbake.Fase.GITT_OPP, t.fase());
+        lik(null, t.innlogging());
+        lik(Tilbake.Handling.VIS_TEKST, t.iMenyen(Tilbake.FRIST_MS + 20_000, FEILET).handling());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(Tilbake.FRIST_MS + 30_000, AVBRUTT).handling());
+
+        // Menyen kom aldri fram (spilleren satt i et annet vindu): ingenting å vise, bare slutt.
+        var u = new Tilbake();
+        u.påKnoxLife();
+        u.brudd(0, null, inn());
+        u.tilMenyen(3_000);
+        lik(Tilbake.Handling.INGENTING, u.iMenyen(Tilbake.FRIST_MS, LASTER).handling());
+        lik(Tilbake.Fase.GITT_OPP, u.fase());
+        lik(null, u.innlogging());
+    }
+
+    static void prøveTilbakeStopperNårSpillerenAvbryter() {
+        var t = new Tilbake();
+        t.påKnoxLife();
+        t.brudd(0, null, inn());
+        t.tilMenyen(3_000);
+        t.iMenyen(3_000, MENYEN);
+        t.iMenyen(5_000, FEILET); // feilet, venter
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(6_000, AVBRUTT).handling());
+        lik(Tilbake.Fase.AVBRUTT, t.fase());
+        lik(null, t.innlogging());
+        lik(Tilbake.Handling.INGENTING, t.iMenyen(30_000, MENYEN).handling());
+
+        // «Abort» mens spillet kobler til.
+        var u = new Tilbake();
+        u.påKnoxLife();
+        u.brudd(0, null, inn());
+        u.tilMenyen(3_000);
+        u.iMenyen(3_000, MENYEN);
+        u.iMenyen(3_100, KOBLER);
+        u.iMenyen(3_200, AVBRUTT);
+        lik(Tilbake.Fase.AVBRUTT, u.fase());
+    }
+
+    static void prøveTilbakeBareForKnoxLifeOgUtenUtkastelse() {
+        var t = new Tilbake();
+        sant(!t.brudd(0, null, inn()), "en annen server enn Knox Life");
+        t.påKnoxLife();
+        sant(!t.brudd(0, "You have been kicked from this server by an admin.", inn()), "kastet ut");
+        lik(Tilbake.Fase.AV, t.fase());
+        sant(!t.brudd(0, null, inn()), "påKnoxLife gjelder bare én innlogging");
+        t.påKnoxLife();
+        t.omstart(true);
+        sant(t.brudd(0, "Server stopped.", inn()), "etter et varsel om omstart gjelder spillets egen grunn også");
+        t.påKnoxLife(); // inne igjen
+        lik(Tilbake.Fase.FERDIG, t.fase());
+        lik(null, t.innlogging());
+        lik(Tilbake.BRUDD, t.skjermtekst()); // varselet gjaldt bare forrige innlogging
+
+        // Omstarten ble avlyst: den som kastes ut etterpå, får spillets vanlige skjerm.
+        t.omstart(true);
+        t.omstart(false);
+        sant(!t.brudd(0, "You have been kicked from this server by an admin.", inn()), "avlyst omstart");
+        // Et varsel før modet har sagt at dette er Knox Life, gjelder ikke.
+        t.omstart(true);
+        t.påKnoxLife();
+        lik(Tilbake.BRUDD, t.skjermtekst());
+    }
+
+    static void prøveTilbakeViserAldriPassordet() {
+        sant(!inn().toString().contains("hemmelig"), inn().toString());
+    }
 }
