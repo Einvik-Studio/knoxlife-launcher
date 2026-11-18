@@ -140,7 +140,8 @@ mod prøver {
         assert!(r.contains("newest update seen: build 12"), "{r}");
         assert!(r.contains("stamp: feil=IOException: denied · tid=1"), "{r}");
         assert!(r.contains("last error: The Knox Life patch did not load."), "{r}");
-        assert!(r.contains("game: ~/Steam/ProjectZomboid"), "{r}");
+        let skille = std::path::MAIN_SEPARATOR;
+        assert!(r.contains(&format!("game: ~{skille}Steam{skille}ProjectZomboid")), "{r}");
         assert!(!r.contains("Bjørn"), "brukernavnet står i rapporten:\n{r}");
         assert!(!r.contains("something else"));
         assert!(r.contains("(30) --"), "{r}");
