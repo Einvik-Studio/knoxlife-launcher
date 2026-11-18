@@ -8,6 +8,8 @@
 #                                      projectzomboid.jar, i den dedikerte serveren `java/`), og porten starter
 #                                      agenten mot spillet. Trenger samme Java som spillet (25). Uten mappen bygges
 #                                      agenten uten Java-modene – bare til prøvene, aldri til spillerne.
+#                                      Avdriftssjekken sammenligner metodene Java-modene griper inn i, med
+#                                      fingeravtrykkene i avdrift.txt; AVDRIFT=lag skriver filen på nytt.
 #
 # Trenger JDK 21 eller nyere (javac, jar, java), curl og sha256sum – alt finnes i Git Bash på Windows med en JDK.
 set -euo pipefail
@@ -116,7 +118,7 @@ echo "knoxlife-agent.jar  $(sha "$UT/knoxlife-agent.jar")  $(wc -c < "$UT/knoxli
 
 mkdir -p "$UT/porten"
 javac --release "$RELEASE" -encoding UTF-8 -nowarn -proc:none -cp "$CP$SEP$UT/klasser" -d "$UT/porten" \
-  porten/knoxlife/porten/Porten.java
+  porten/knoxlife/porten/Porten.java porten/knoxlife/porten/Avdrift.java
 
 echo "== prøven ende til ende: et etterlignet spill med en prøve-mod"
 mkdir -p "$UT/e2e/spill" "$UT/e2e/mixin" "$UT/e2e/innhold"
@@ -181,10 +183,39 @@ grep -q "prove.Spillet got no Java mod" "$UT/e2e/borte.txt" \
   || { echo "porten stoppet, men av feil grunn:" >&2; cat "$UT/e2e/borte.txt" >&2; exit 1; }
 echo "   slapp gjennom når alt traff, og stoppet når klassen var borte"
 
+echo "== avdriftssjekken finner en metode som er endret uten at Mixin merker det"
+avdrift() { java -Dstdout.encoding=UTF-8 -cp "$CP$SEP$UT/porten" knoxlife.porten.Avdrift "$@"; }
+mkdir -p "$UT/e2e/drift"
+javac --release "$RELEASE" -encoding UTF-8 -nowarn -d "$UT/e2e/drift" prover/spill-drift/prove/Spillet.java
+(cd "$UT/e2e/drift" && jar --create --file ../drift.jar --date="$DATO" .)
+AVTRYKK="$UT/e2e/avdrift.txt"
+avdrift lag "$AVTRYKK" "$UT/e2e/projectzomboid.jar" "$UT/e2e/mixin" > /dev/null
+[[ "$(grep -c '^prove\.Spillet#' "$AVTRYKK")" == 2 ]] || { echo "fingeravtrykkene mangler:" >&2; cat "$AVTRYKK" >&2; exit 1; }
+avdrift sjekk "$AVTRYKK" "$UT/e2e/projectzomboid.jar" "$UT/e2e/mixin" > "$UT/e2e/avdrift-lik.txt" 2>&1 \
+  || { echo "avdriftssjekken stoppet det samme spillet:" >&2; cat "$UT/e2e/avdrift-lik.txt" >&2; exit 1; }
+grep -q "2 uendret, 0 å se på" "$UT/e2e/avdrift-lik.txt" || { cat "$UT/e2e/avdrift-lik.txt" >&2; exit 1; }
+forventer_avdrift() { # jar, linje den skal ha
+  if avdrift sjekk "$AVTRYKK" "$1" "$UT/e2e/mixin" > "$UT/e2e/avdrift-ut.txt" 2>&1; then
+    echo "avdriftssjekken slapp gjennom $(basename "$1"):" >&2; cat "$UT/e2e/avdrift-ut.txt" >&2; exit 1
+  fi
+  grep -qF "$2" "$UT/e2e/avdrift-ut.txt" || { echo "ventet «$2»:" >&2; cat "$UT/e2e/avdrift-ut.txt" >&2; exit 1; }
+}
+forventer_avdrift "$UT/e2e/drift.jar" "endret prove.Spillet#hilsen()Ljava/lang/String; (SpilletMixin)"
+grep -q "1 uendret, 1 å se på" "$UT/e2e/avdrift-ut.txt" || { cat "$UT/e2e/avdrift-ut.txt" >&2; exit 1; }
+grep -q "^prove\.Spillet#tall()I " "$UT/e2e/avdrift-ut.txt" || { echo "den nye filen ble ikke skrevet ut" >&2; exit 1; }
+forventer_avdrift "$UT/e2e/endret.jar" "borte  prove.Spillet#hilsen (SpilletMixin)"
+forventer_avdrift "$UT/e2e/borte.jar" "borte  prove.Spillet (SpilletMixin)"
+if grep -q "ikke i bruk" "$UT/e2e/avdrift-ut.txt"; then
+  echo "metodene i en klasse som er borte, ble meldt to ganger:" >&2; cat "$UT/e2e/avdrift-ut.txt" >&2; exit 1
+fi
+echo "   fant den endrede metoden og det som er borte, og slapp gjennom det samme spillet"
+
 if [[ -n "${SPILLETS_MAPPE:-}" ]]; then
   echo "== porten: agenten mot spillets egen jar ($SPILLETS_MAPPE)"
   java -XX:-EnableDynamicAgentLoading -javaagent:"$UT/knoxlife-agent.jar" -Dknoxlife.bygg="$BYGG" \
     -cp "$SPILL_CP$UT/porten" knoxlife.porten.Porten "$SPILLETS_MAPPE/projectzomboid.jar"
+  echo "== avdriftssjekken: metodene Java-modene griper inn i, mot fingeravtrykkene i avdrift.txt"
+  avdrift "${AVDRIFT:-sjekk}" avdrift.txt "$SPILLETS_MAPPE/projectzomboid.jar" "$UT/mods"
 fi
 
 echo "== ferdig: $UT/knoxlife-agent.jar"

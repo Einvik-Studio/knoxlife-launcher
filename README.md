@@ -85,5 +85,10 @@ That build also starts the agent against the real game and loads every class in 
 the game (a method was renamed, a class is gone), the build stops. GitHub does this on every change, with the game
 fetched from Steam's dedicated server; the game's files are never stored or published here.
 
+A new version of the game can also change a method without renaming it, so the mod still fits but does something
+different. The drift check catches that: `java/agent/avdrift.txt` holds a fingerprint (SHA-1 of the instructions) of
+every game method our mods touch, and the build stops when one of them has changed, until someone has read the new
+method and checked the mod. The build then prints what the file should be; `AVDRIFT=lag` writes it.
+
 `knoxctl finn` shows where the game is, `knoxctl status` whether the patch is in, and `knoxctl sett-tilbake` puts the
 game back.
