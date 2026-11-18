@@ -97,6 +97,41 @@ public final class Prover {
         lik(List.of("classes in folder spillet: zombie/network/GameClient.class"), Javavakt.funn(uten));
     }
 
+    /** Feil 2 fra prøven på PC-en 18.11: en Workshop-mod i spillmappen ga «classes in folder .» og ble avvist. */
+    static void prøveKlasserJavaIkkeKanLasteTellesIkke() throws Exception {
+        Path mappe = tom.resolve("spillmappen");
+        Path workshop = mappe.resolve("steamapps/workshop/content/108600/3402067343/mods/Mod/42/media/java/a");
+        Files.createDirectories(workshop);
+        Files.write(workshop.resolve("Generator.class"), new byte[] {1});
+        Files.createDirectories(mappe.resolve(".git/objects"));
+        Files.write(mappe.resolve(".git/objects/X.class"), new byte[] {1});
+        Files.createDirectories(mappe.resolve("zombie"));
+        Files.write(mappe.resolve("zombie/module-info.class"), new byte[] {1});
+        Files.write(mappe.resolve("zombie/ikke-en-klasse.class"), new byte[] {1});
+        var i = inntrykk(List.of(), List.of("projectzomboid.jar", mappe.toString()), Map.of());
+        lik(List.of(), Javavakt.funn(i));
+        // En klasse Java kan laste, er fortsatt et funn – også ved siden av Workshop-mappen.
+        Files.createDirectories(mappe.resolve("steamapps/juks"));
+        Files.write(mappe.resolve("steamapps/juks/Juks$1.class"), new byte[] {1});
+        lik(List.of("classes in folder spillmappen: steamapps/juks/Juks$1.class"), Javavakt.funn(i));
+    }
+
+    static void prøveJavaNavn() {
+        for (String ja : List.of("zombie", "GameClient$1", "_a", "æøå", "steamapps")) {
+            sant(Javavakt.javaNavn(ja), ja);
+        }
+        for (String nei : List.of("", "108600", "module-info", ".git", "a b", "1a", "a.b")) {
+            sant(!Javavakt.javaNavn(nei), nei);
+        }
+    }
+
+    static void prøveTomMappeGirIngenFunn() throws Exception {
+        Path mappe = tom.resolve("stor");
+        Files.createDirectories(mappe);
+        sant(Javavakt.FLEST_FILER > 1000, "grensen er høy nok til spillmappen");
+        lik(null, Javavakt.førsteKlasse(mappe));
+    }
+
     static void prøveDynamiskeAgenterOgFremmedKlasselaster() {
         var i = new Javavakt.Inntrykk(List.of(), List.of("projectzomboid.jar"), Map.of(), "juks.Laster", Boolean.TRUE, null);
         lik(List.of("dynamic agents allowed", "class loader juks.Laster"), Javavakt.funn(i));

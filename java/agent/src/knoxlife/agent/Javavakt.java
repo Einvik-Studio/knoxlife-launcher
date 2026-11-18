@@ -2,14 +2,16 @@ package knoxlife.agent;
 
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 /**
  * Juksesperren hos spilleren: ser gjennom Java-en spillet kjører i og lister det som ikke hører hjemme der.
@@ -153,20 +155,74 @@ public final class Javavakt {
         }
     }
 
-    /** Den første klassefilen i en mappe, eller {@code null}. */
+    /**
+     * Den første klassefilen Java kan laste fra en mappe, eller {@code null}.
+     *
+     * <p>Bare der Java kan finne en klasse: hver mappe på veien må kunne være en del av et pakkenavn, og filen et
+     * klassenavn. Andre mapper hoppes over med alt i dem – som Workshop-mappen {@code steamapps/workshop/content/108600}
+     * i spillmappen, der mods kan ha med klassefiler spillet aldri laster. Java-kode kan ikke nevne en klasse der, og
+     * {@code ServiceLoader} nekter slike navn.
+     */
     static String førsteKlasse(Path mappe) {
+        String[] funnet = {null};
         int[] talt = {0};
-        try (Stream<Path> alle = Files.walk(mappe)) {
-            return alle
-                    .peek(p -> talt[0]++)
-                    .limit(FLEST_FILER)
-                    .filter(p -> p.getFileName() != null && p.getFileName().toString().endsWith(".class"))
-                    .map(p -> mappe.relativize(p).toString().replace('\\', '/'))
-                    .findFirst()
-                    .orElseGet(() -> talt[0] >= FLEST_FILER ? "(not checked, too many files)" : null);
+        try {
+            Files.walkFileTree(mappe, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult preVisitDirectory(Path d, BasicFileAttributes a) {
+                    if (++talt[0] > FLEST_FILER) {
+                        funnet[0] = FOR_MANGE;
+                        return FileVisitResult.TERMINATE;
+                    }
+                    return d.equals(mappe) || javaNavn(navn(d)) ? FileVisitResult.CONTINUE : FileVisitResult.SKIP_SUBTREE;
+                }
+
+                @Override
+                public FileVisitResult visitFile(Path f, BasicFileAttributes a) {
+                    if (++talt[0] > FLEST_FILER) {
+                        funnet[0] = FOR_MANGE;
+                        return FileVisitResult.TERMINATE;
+                    }
+                    String n = navn(f);
+                    if (n.endsWith(".class") && javaNavn(n.substring(0, n.length() - ".class".length()))) {
+                        funnet[0] = mappe.relativize(f).toString().replace('\\', '/');
+                        return FileVisitResult.TERMINATE;
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path f, IOException e) {
+                    return FileVisitResult.CONTINUE; // en fil eller mappe som ikke kan leses, kan ikke Java laste fra heller
+                }
+            });
+            return funnet[0];
         } catch (IOException | RuntimeException e) {
             return null;
         }
+    }
+
+    /** Funnet når en mappe har flere filer enn vakten går gjennom. */
+    static final String FOR_MANGE = "(not checked, too many files)";
+
+    private static String navn(Path p) {
+        Path n = p.getFileName();
+        return n == null ? "" : n.toString();
+    }
+
+    /** Kan teksten være en del av et pakkenavn eller et klassenavn i Java ({@code zombie}, {@code GameClient$1})? */
+    static boolean javaNavn(String s) {
+        if (s.isEmpty() || !Character.isJavaIdentifierStart(s.codePointAt(0))) {
+            return false;
+        }
+        for (int i = Character.charCount(s.codePointAt(0)); i < s.length(); ) {
+            int c = s.codePointAt(i);
+            if (!Character.isJavaIdentifierPart(c)) {
+                return false;
+            }
+            i += Character.charCount(c);
+        }
+        return true;
     }
 
     /** Filnavnet til slutt i en sti, uten mappene foran. */
