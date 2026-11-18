@@ -137,7 +137,7 @@ uten="$(java -cp "$UT/e2e/projectzomboid.jar" prove.Spillet)"
 
 STEMPEL="$UT/e2e/Zomboid/KnoxLife/stempel.txt"
 mkdir -p "$(dirname "$STEMPEL")"
-printf 'adresse=play.example.invalid\nport=16261\nbillett=prove\n' > "$(dirname "$STEMPEL")/reise.txt"
+printf 'server=hoved\n' > "$(dirname "$STEMPEL")/reise.txt"
 med="$(java -XX:-EnableDynamicAgentLoading -javaagent:"$UT/e2e/knoxlife-agent.jar" -Dknoxlife.bygg=7 \
   -Dknoxlife.stempel="~/Zomboid/KnoxLife/stempel.txt" -Duser.home="$UT/e2e" -cp "$UT/e2e/projectzomboid.jar" prove.Spillet)"
 echo "$med" | sed 's/^/   /'
@@ -145,7 +145,7 @@ echo "$med" | sed 's/^/   /'
 [[ "$med" == *"tall=42"* ]] || { echo "MixinExtras ble ikke lagt inn" >&2; exit 1; }
 [[ "$med" == *"rapport=v1|7|ok"* && "$med" != *"rapport=v1|7|ok|"* ]] || { echo "rapporten er feil" >&2; exit 1; }
 grep -q '^bygg=7$' "$STEMPEL" || { echo "stempelet mangler" >&2; cat "$STEMPEL" >&2; exit 1; }
-[[ ! -f "$(dirname "$STEMPEL")/reise.txt" ]] || { echo "billetten ble ikke slettet" >&2; exit 1; }
+[[ ! -f "$(dirname "$STEMPEL")/reise.txt" ]] || { echo "reise.txt ble ikke slettet" >&2; exit 1; }
 
 med_juks="$(java -XX:+EnableDynamicAgentLoading -javaagent:"$UT/e2e/knoxlife-agent.jar" -Dknoxlife.bygg=7 \
   -cp "$UT/e2e/projectzomboid.jar$SEP$UT/e2e/mixin" prove.Spillet)"
