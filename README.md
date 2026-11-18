@@ -12,7 +12,8 @@ reserved (see [LICENSE](LICENSE)).
 
 More screenshots (with example news): [Details](docs/vinduet/details.png),
 [downloading](docs/vinduet/laster-ned.png), [new game version](docs/vinduet/ny-spillversjon.png),
-[no connection](docs/vinduet/uten-nett.png), [game not found](docs/vinduet/uten-spillet.png).
+[no connection](docs/vinduet/uten-nett.png), [game not found](docs/vinduet/uten-spillet.png),
+[waiting in line](docs/vinduet/i-koen.png).
 
 ## What the launcher does when you press Play
 
@@ -40,7 +41,8 @@ More screenshots (with example news): [Details](docs/vinduet/details.png),
 - Ask for a password or log in to anything. Your identity is your Steam account, which the game already checks.
 - Run as administrator.
 - Send data about you or your PC anywhere. The error report is only copied when you press "Copy report", and you paste
-  it yourself.
+  it yourself. The one exception is the line when the server is full (below): then your Steam ID – the same ID the
+  game sends when it joins – goes to the Knox Life server to hold your place.
 - Replace or keep any of the game's files.
 - Load anything from the internet into the window. The news comes inside the signed manifest and is shown as plain
   text.
@@ -66,6 +68,17 @@ and lists what does not belong there: other `-javaagent`, native agents and debu
 class loader, Java options in environment variables, extra files on the class path, class files in folders on the class
 path, and whether tools can attach to the game after it has started. It sends at most 8 findings, each at most 96
 characters, with **file names only – never folder paths**, so nothing about your folders or user name leaves your PC.
+
+## When the server is full
+
+The status line shows how many are playing and when the next restart is. It comes from the Knox Life server, at the
+address in the signed manifest, and has no names in it.
+
+When the server is full and you press Play, you wait in line in the launcher – not in the game, where everyone waiting
+would hold one of the server's connections. The launcher asks the server every 10 seconds where you are in line
+("You are number 4 of 9 in line"). When it is your turn, the server holds a place for you for 5 minutes, and the
+launcher starts the game by itself. Press "Leave line" to stop waiting; if the launcher stops asking (you closed it),
+you are out of the line after half a minute. In emergency mode there is no line.
 
 ## Back in after a restart
 

@@ -7,6 +7,7 @@
 
 mod nett;
 
+use knoxlife_kjerne::ko::{self, Kosvar, Serverstatus};
 use knoxlife_kjerne::manifest::{self, Manifest, Nyhet};
 use knoxlife_kjerne::okt::{self, Maskin, Nett, Oppsett, Steg, Utfall};
 use knoxlife_kjerne::porten::{self, Svar};
@@ -31,6 +32,8 @@ struct Launcher {
     siste_feil: Mutex<Option<String>>,
     /// «Play» er trykket og økten er ikke ferdig.
     i_gang: AtomicBool,
+    /// Adressen til serverens status og køen fra det siste signerte manifestet, og om det sa nødmodus.
+    server: Mutex<(Option<String>, bool)>,
 }
 
 fn hjem() -> PathBuf {
@@ -142,12 +145,13 @@ enum Status {
     Feil { melding: String },
 }
 
-fn hent_status() -> Resultat<Status> {
+fn hent_status(server: &Mutex<(Option<String>, bool)>) -> Resultat<Status> {
     let nett = nett::Https::innebygd().ok_or_else(uten_adresse)?;
     let nøkkel = manifest::innebygd_nøkkel().ok_or(Feil::Signatur)?;
     let (json, sig) = nett.manifest()?;
     let m = Manifest::les_signert(&json, &sig, &nøkkel)?;
     m.sjekk_bygg(manifest::sist_bygg(&tilstand()))?;
+    *server.lock().unwrap_or_else(|e| e.into_inner()) = (m.status.clone(), m.nødmodus);
     let (spillversjon, bygg, nyheter) = (m.spillet.versjon.clone(), m.bygg, m.nyheter.clone());
     Ok(match finn_spillet().map(|s| porten::sjekk(&s, &m)) {
         Ok(Ok(Svar::Nødmodus)) => Status::Nodmodus { spillversjon, bygg, nyheter },
@@ -162,12 +166,75 @@ fn uten_adresse() -> Feil {
 }
 
 #[tauri::command]
-async fn status() -> Status {
-    match tauri::async_runtime::spawn_blocking(hent_status).await {
+async fn status(app: AppHandle) -> Status {
+    let svar = tauri::async_runtime::spawn_blocking(move || hent_status(&app.state::<Launcher>().server)).await;
+    match svar {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => Status::Feil { melding: e.to_string() },
         Err(e) => Status::Feil { melding: e.to_string() },
     }
+}
+
+// ---------- serverens status og køen (launcher.md 3.8 punkt 6) ----------
+
+/// Serverens status for statuslinjen, og om «Play» må stå i køen først.
+#[derive(Serialize)]
+struct Serverinfo {
+    #[serde(flatten)]
+    status: Serverstatus,
+    /// Serveren er full: «Play» stiller spilleren i køen.
+    vent: bool,
+}
+
+fn statusnett(launcher: &Launcher) -> Option<(nett::Statusnett, bool)> {
+    let (adresse, nødmodus) = launcher.server.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    Some((nett::Statusnett::ny(&adresse?), nødmodus))
+}
+
+/// Statusen nå, eller ingenting (manifestet har ingen adresse, eller serveren svarte ikke – da starter «Play» som før).
+#[tauri::command]
+async fn serverstatus(app: AppHandle) -> Option<Serverinfo> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (nett, nødmodus) = statusnett(&app.state::<Launcher>())?;
+        let status = ko::les_status(&nett.status().ok()?).ok()?;
+        let vent = ko::må_stå_i_kø(&status, nødmodus);
+        Some(Serverinfo { status, vent })
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+fn steam_id() -> Resultat<String> {
+    spillet::steam_brukeren(&spillet::steam_mapper_her(&hjem()))
+        .map(|b| b.id)
+        .ok_or_else(|| Feil::Nett("no Steam account was found on this PC – log in to Steam first".into()))
+}
+
+/// Stå i køen: plassen, eller «klar» når det er spillerens tur. Vinduet spør hvert 10. sekund.
+#[tauri::command]
+async fn ko(app: AppHandle) -> Result<Kosvar, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Resultat<Kosvar> {
+        let (nett, _) = statusnett(&app.state::<Launcher>()).ok_or_else(|| Feil::Nett("no server status".into()))?;
+        ko::les_kosvar(&nett.ko(false, &steam_id()?)?)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+/// «Leave line».
+#[tauri::command]
+async fn forlat_ko(app: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || -> Resultat<()> {
+        if let Some((nett, _)) = statusnett(&app.state::<Launcher>()) {
+            nett.ko(true, &steam_id()?)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 /// «Play»: hele økten i kjernen. Hvert steg sendes til vinduet som hendelsen `steg`.
@@ -318,7 +385,10 @@ fn main() {
             ytelsesmodus_valgt,
             velg_ytelsesmodus,
             kopier_rapport,
-            apne_loggmappen
+            apne_loggmappen,
+            serverstatus,
+            ko,
+            forlat_ko
         ])
         .run(tauri::generate_context!())
         .expect("vinduet kunne ikke startes");

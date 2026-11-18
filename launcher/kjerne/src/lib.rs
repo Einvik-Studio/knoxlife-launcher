@@ -12,8 +12,11 @@
 //! 7. [`start`] – billetten, [`ytelsesmodus`] når spilleren har slått den på, Steam, stempelet og vakten til spillet
 //!    avsluttes.
 //! 8. [`ytelsesmodus::sett_tilbake`] og [`patch::sett_tilbake`].
+//!
+//! Er serveren full, står spilleren i køen ([`ko`]) før økten starter.
 
 pub mod feil;
+pub mod ko;
 pub mod manifest;
 pub mod nedlasting;
 pub mod okt;

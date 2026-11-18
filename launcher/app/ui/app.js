@@ -25,9 +25,21 @@ const IKKE_FUNNET = "Project Zomboid was not found. Choose the folder it is inst
 const IKKE_LASTET =
   'The Knox Life patch did not load. Press "Copy report" and send it to staff on Discord.';
 
+const KO_TEKST = (plass, av) =>
+  `The server is full. You are number ${plass} of ${av} in line – Knox Life starts by itself when it is your turn. Keep this window open.`;
+const DIN_TUR = "It's your turn! Knox Life is starting – join the server within 5 minutes, or your place goes to the next in line.";
+const KO_SLUTT = {
+  koen_er_full: "The line is full right now. Try again in a few minutes.",
+  nede: "The server is restarting. Try again in a few minutes.",
+  ikke_pa_whitelisten: "This Steam account is not on the whitelist. Apply on the website, or ask staff on Discord.",
+};
+const KO_FEIL = "The line could not be reached. Press Play to try again.";
+
 let iGang = false;
 let klar = false;
 let spilletFunnet = true;
+let server = null; // serverens status (spillere, omstart, full) – null når den ikke kan hentes
+let iKo = false;
 
 function settStatus(tekst, prikk, detaljer) {
   $("statustekst").textContent = tekst;
@@ -35,10 +47,12 @@ function settStatus(tekst, prikk, detaljer) {
   if (detaljer !== undefined) $("detaljlinje").textContent = detaljer;
 }
 
-function visMelding(tekst, { rapport = false, ok = false, velg = false } = {}) {
+function visMelding(tekst, { rapport = false, ok = false, velg = false, forlat = false } = {}) {
   $("meldingstekst").textContent = tekst;
   $("melding-rapport").hidden = !rapport;
   $("melding-velg").hidden = !velg;
+  $("melding-forlat").hidden = !forlat;
+  $("melding-lukk").hidden = forlat; // køen lukkes med «Leave line»
   $("melding").classList.toggle("ok", ok);
   $("melding").hidden = false;
 }
@@ -79,17 +93,53 @@ function visNyheter(nyheter) {
 
 function oppdaterPlay() {
   const play = $("play");
-  play.disabled = iGang || !klar;
-  if (!iGang) {
+  play.disabled = iGang || iKo || !klar;
+  if (!iGang && !iKo) {
     play.textContent = "PLAY";
     play.classList.remove("i-gang");
   }
 }
 
 let steamNavn = null;
+let spillDeler = [];
 function linje2(deler) {
-  if (steamNavn) deler.push(`Steam: ${steamNavn}`);
-  return deler.join(" · ");
+  spillDeler = deler;
+  const alle = [];
+  const omstart = omstartTekst();
+  if (omstart) alle.push(omstart);
+  alle.push(...deler);
+  if (steamNavn) alle.push(`Steam: ${steamNavn}`);
+  return alle.join(" · ");
+}
+
+// Neste omstart i spillerens egen tid, når den er innen et døgn.
+function omstartTekst() {
+  if (!server || !server.omstart) return "";
+  const om = server.omstart - Date.now();
+  if (om <= 0 || om > 24 * 3600 * 1000) return "";
+  const kl = new Date(server.omstart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `Restart at ${kl}`;
+}
+
+// Serverens tall bak «Ready»: spillerne, full, omstart eller nede.
+function serverTekst() {
+  if (!server) return "";
+  if (!server.oppe) return "the server is down right now";
+  if (server.stengt) return "the server is restarting";
+  if (server.fullt) return `server full (${server.spillere}/${server.maks})${server.ko ? ` · ${server.ko} in line` : ""}`;
+  return `${server.spillere}/${server.maks} players`;
+}
+
+let klarTekst = null; // statuslinjen når alt er klart («Ready» eller nødmodus), før serverens tall
+function visKlar() {
+  if (klarTekst === null || iGang || iKo) return;
+  const tall = serverTekst();
+  settStatus(tall ? `${klarTekst} · ${tall}` : klarTekst, klarTekst === "Ready" ? "klar" : "venter", linje2(spillDeler));
+}
+
+async function hentServer() {
+  server = await invoke("serverstatus").catch(() => null);
+  visKlar();
 }
 
 async function hentStatus() {
@@ -105,8 +155,11 @@ async function hentStatus() {
   } else {
     const spill = [`Game ${s.spillversjon}`, `Patch ${s.bygg}`];
     visNyheter(s.nyheter);
+    klarTekst = null;
     if (s.status === "nodmodus") {
-      settStatus("Emergency mode – Knox Life runs without its patch for now", "venter", linje2(spill));
+      klarTekst = "Emergency mode – Knox Life runs without its patch for now";
+      settStatus(klarTekst, "venter", linje2(spill));
+      hentServer();
     } else if (s.status === "venter_pa_spillet") {
       settStatus("Knox Life is getting ready for the new game version", "venter", linje2(spill));
       visMelding(OPPDATERT);
@@ -115,16 +168,80 @@ async function hentStatus() {
       settStatus("Project Zomboid was not found", "feil", linje2(spill));
       klar = false;
     } else {
+      klarTekst = "Ready";
       settStatus("Ready", "klar", linje2(spill));
+      hentServer();
     }
   }
   oppdaterPlay();
 }
 
-async function spill() {
-  if (iGang) return;
+// Køen (launcher.md 3.8 punkt 6): er serveren full, venter spilleren her – ikke i spillet. Launcheren spør hvert 10.
+// sekund, og når det er spillerens tur, starter «Play» av seg selv.
+let koTeller = 0; // hver kø har sitt nummer, så «Leave line» stopper den som går
+async function stillIKo() {
+  iKo = true;
+  const denne = ++koTeller;
+  const play = $("play");
+  play.disabled = true;
+  play.classList.add("i-gang");
+  play.textContent = "IN LINE";
+  settStatus("Waiting in line", "venter");
+  visMelding("The server is full. Joining the line…", { forlat: true });
+  let feil = 0;
+  while (iKo && denne === koTeller) {
+    let svar = null;
+    try {
+      svar = await invoke("ko");
+      feil = 0;
+    } catch {
+      feil++;
+      if (feil >= 3) {
+        avsluttKo(KO_FEIL);
+        return;
+      }
+    }
+    if (denne !== koTeller || !iKo) return;
+    if (svar && svar.ko === "klar") {
+      iKo = false;
+      oppdaterPlay();
+      visMelding(DIN_TUR, { ok: true });
+      spill({ fraKo: true });
+      return;
+    }
+    if (svar && svar.ko === "venter") {
+      play.textContent = `#${svar.plass} IN LINE`;
+      settStatus(`Waiting in line – number ${svar.plass} of ${svar.av}`, "venter");
+      visMelding(KO_TEKST(svar.plass, svar.av), { forlat: true });
+    } else if (svar && KO_SLUTT[svar.ko]) {
+      avsluttKo(KO_SLUTT[svar.ko]);
+      return;
+    }
+    await new Promise((ferdig) => setTimeout(ferdig, 10000));
+  }
+}
+
+function avsluttKo(tekst) {
+  iKo = false;
+  koTeller++;
+  oppdaterPlay();
+  visKlar();
+  if (tekst) visMelding(tekst);
+  else skjulMelding();
+}
+
+async function spill({ fraKo = false } = {}) {
+  if (iGang || iKo) return;
+  // Full server: først køen. Kan statusen ikke hentes, starter «Play» som før – spillet sier selv fra om det er fullt.
+  if (!fraKo) {
+    server = await invoke("serverstatus").catch(() => null);
+    if (server && server.vent) {
+      stillIKo();
+      return;
+    }
+  }
   iGang = true;
-  skjulMelding();
+  if (!fraKo) skjulMelding();
   const play = $("play");
   play.disabled = true;
   play.classList.add("i-gang");
@@ -183,7 +300,15 @@ listen("steg", (h) => {
   if (s.steg === "ikke_lastet") visMelding(IKKE_LASTET, { rapport: true });
 });
 
-$("play").addEventListener("click", spill);
+$("play").addEventListener("click", () => spill());
+$("melding-forlat").addEventListener("click", async () => {
+  avsluttKo(null);
+  await invoke("forlat_ko").catch(() => {});
+});
+// Statusen hentes på nytt hvert 30. sekund mens vinduet er åpent.
+setInterval(() => {
+  if (klar && !iGang && !iKo) hentServer();
+}, 30000);
 $("minimer").addEventListener("click", () => vinduet.minimize());
 $("lukk").addEventListener("click", () => {
   // Mens spillet går, må launcheren være åpen for å sette filene tilbake etterpå.

@@ -50,6 +50,9 @@ pub struct Manifest {
     /// inn ([`crate::ytelsesmodus::PROFIL`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ytelsesmodus: Option<BTreeMap<String, String>>,
+    /// Adressen til serverens status og køen (`launcher.md` 3.8 punkt 6), med `/` til slutt – [`crate::ko`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// Én nyhet i launcheren. Teksten er på engelsk, som alt spillerne ser.
@@ -163,6 +166,9 @@ impl Manifest {
         {
             return feil("news");
         }
+        if self.status.as_deref().is_some_and(|a| !crate::ko::gyldig_adresse(a)) {
+            return feil("status address");
+        }
         if self.ytelsesmodus.as_ref().is_some_and(|y| {
             y.len() > crate::ytelsesmodus::FLEST
                 || y.iter().any(|(n, v)| !crate::ytelsesmodus::gyldig_navn(n) || !crate::ytelsesmodus::gyldig_verdi(v))
@@ -242,6 +248,7 @@ pub(crate) mod prøver {
             nødmodus: false,
             nyheter: Vec::new(),
             ytelsesmodus: None,
+            status: None,
         }
     }
 
@@ -346,6 +353,20 @@ pub(crate) mod prøver {
         }
         m.ytelsesmodus = Some((0..=crate::ytelsesmodus::FLEST).map(|i| (format!("a{i}"), "1".to_string())).collect());
         assert!(m.sjekk().is_err());
+    }
+
+    #[test]
+    fn statusadressen_er_https_og_står_bare_der_den_er_satt() {
+        let n = nøkkelpar();
+        let mut m = eksempel(7);
+        m.status = Some("https://status.example.invalid/".into());
+        let (json, sig) = signer(&m, &n);
+        assert_eq!(Manifest::les_signert(&json, &sig, &n.verifying_key()).unwrap().status, m.status);
+        assert!(!String::from_utf8(signer(&eksempel(7), &n).0).unwrap().contains("status"));
+        for feil in ["http://status.example.invalid/", "https://status.example.invalid", "https://a@b/"] {
+            m.status = Some(feil.into());
+            assert!(matches!(m.sjekk(), Err(Feil::Manifest(_))), "{feil}");
+        }
     }
 
     #[test]
