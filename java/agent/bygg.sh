@@ -119,7 +119,7 @@ echo "knoxlife-agent.jar  $(sha "$UT/knoxlife-agent.jar")  $(wc -c < "$UT/knoxli
 
 mkdir -p "$UT/porten"
 javac --release "$RELEASE" -encoding UTF-8 -nowarn -proc:none -cp "$CP$SEP$UT/klasser" -d "$UT/porten" \
-  porten/knoxlife/porten/Porten.java porten/knoxlife/porten/Avdrift.java
+  porten/knoxlife/porten/Porten.java porten/knoxlife/porten/Avdrift.java porten/knoxlife/porten/Versjon.java
 
 echo "== prøven ende til ende: et etterlignet spill med en prøve-mod"
 mkdir -p "$UT/e2e/spill" "$UT/e2e/mixin" "$UT/e2e/innhold"
@@ -184,6 +184,18 @@ grep -q "prove.Spillet got no Java mod" "$UT/e2e/borte.txt" \
   || { echo "porten stoppet, men av feil grunn:" >&2; cat "$UT/e2e/borte.txt" >&2; exit 1; }
 echo "   slapp gjennom når alt traff, og stoppet når klassen var borte"
 
+echo "== spillets versjon leses ut av Core.class"
+versjon() { java -cp "$CP$SEP$UT/porten" knoxlife.porten.Versjon "$@"; }
+mkdir -p "$UT/e2e/versjon"
+javac --release "$RELEASE" -encoding UTF-8 -nowarn -d "$UT/e2e/versjon" prover/spill-versjon/zombie/core/*.java
+(cd "$UT/e2e/versjon" && jar --create --file ../versjon.jar --date="$DATO" .)
+fant="$(versjon "$UT/e2e/versjon.jar" 2>&1 || true)"
+[[ "$fant" == "42.130.2" ]] || { echo "feil versjon fra det etterlignede spillet: $fant" >&2; exit 1; }
+if versjon "$UT/e2e/projectzomboid.jar" > /dev/null 2>&1; then
+  echo "Versjon fant en versjon i et spill uten Core" >&2; exit 1
+fi
+echo "   42.130.2 fra et etterlignet spill, og en feil når Core mangler"
+
 echo "== avdriftssjekken finner en metode som er endret uten at Mixin merker det"
 avdrift() { java -Dstdout.encoding=UTF-8 -cp "$CP$SEP$UT/porten" knoxlife.porten.Avdrift "$@"; }
 mkdir -p "$UT/e2e/drift"
@@ -215,6 +227,8 @@ if [[ -n "${SPILLETS_MAPPE:-}" ]]; then
   echo "== porten: agenten mot spillets egen jar ($SPILLETS_MAPPE)"
   java -XX:-EnableDynamicAgentLoading -javaagent:"$UT/knoxlife-agent.jar" -Dknoxlife.bygg="$BYGG" \
     -cp "$SPILL_CP$UT/porten" knoxlife.porten.Porten "$SPILLETS_MAPPE/projectzomboid.jar"
+  echo "== spillets versjon"
+  versjon "$SPILLETS_MAPPE/projectzomboid.jar" | tee "$UT/spillets-versjon.txt"
   echo "== avdriftssjekken: metodene Java-modene griper inn i, mot fingeravtrykkene i avdrift.txt"
   avdrift "${AVDRIFT:-sjekk}" avdrift.txt "$SPILLETS_MAPPE/projectzomboid.jar" "$UT/mods"
 fi

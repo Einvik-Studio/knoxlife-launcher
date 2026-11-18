@@ -13,7 +13,8 @@
 //!    avsluttes.
 //! 8. [`ytelsesmodus::sett_tilbake`] og [`patch::sett_tilbake`].
 //!
-//! Er serveren full, står spilleren i køen ([`ko`]) før økten starter.
+//! Er serveren full, står spilleren i køen ([`ko`]) før økten starter. [`utgivelse`] er jobben i GitHub som lager og
+//! signerer manifestet.
 
 pub mod feil;
 pub mod ko;
@@ -26,6 +27,7 @@ pub mod rapport;
 pub mod spillet;
 pub mod start;
 pub mod sti;
+pub mod utgivelse;
 pub mod vdf;
 pub mod ytelsesmodus;
 

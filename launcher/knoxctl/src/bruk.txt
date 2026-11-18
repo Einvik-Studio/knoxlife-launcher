@@ -6,4 +6,13 @@ knoxctl sett-tilbake                          sett spillet tilbake
 knoxctl sjekk-manifest <json> <sig> [nøkkel]  sjekk signaturen og innholdet
 knoxctl kjører                                går spillet nå?
 
+Utgivelsen i GitHub (.github/workflows/utgivelse.yml):
+knoxctl lag-manifest <ut.json> --bygg <n> --utgitt <tid> --versjon <42.22.2> --spillet-sha256 <hex>
+        --fil <knoxlife-agent.jar> --server <vert:port> [--testserver <vert:port>] [--status <https://…/>]
+        [--forrige <mappe> --nokkel <offentlig nøkkel>] [--nyhet "Tittel|Tekst"]
+                                              manifestet for en ny patch
+knoxctl nodmodus <på|av> <ut.json> --bygg <n> --utgitt <tid> --forrige <mappe> --nokkel <offentlig nøkkel>
+                                              forrige utgave med nødmodus på eller av
+knoxctl signer <manifest.json>                signer med nøkkelen i KNOXLIFE_SIGNERINGSNOKKEL, skriv manifest.sig
+
 --spill <mappe>   bruk denne spillmappen (steamapps/common/ProjectZomboid) i stedet for å lete

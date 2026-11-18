@@ -13,10 +13,10 @@ on:
         description: Steam-grenen til spillet (public eller unstable)
         default: public
   pull_request:
-    paths: ['java/**', '.github/workflows/spillet.yml']
+    paths: ['java/**', '.github/workflows/spillet.yml', '.github/actions/hent-spillet/**']
   push:
     branches: [main]
-    paths: ['java/**', '.github/workflows/spillet.yml']
+    paths: ['java/**', '.github/workflows/spillet.yml', '.github/actions/hent-spillet/**']
 
 permissions:
   contents: read
@@ -35,62 +35,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: SteamCMD
-        run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq lib32gcc-s1 > /dev/null
-          mkdir -p "$RUNNER_TEMP/steamcmd"
-          curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar -xz -C "$RUNNER_TEMP/steamcmd"
-          # Første kjøring oppdaterer bare SteamCMD selv.
-          "$RUNNER_TEMP/steamcmd/steamcmd.sh" +quit || true
-
-      - name: Steams byggenummer for spillet
-        id: steam
-        run: |
-          "$RUNNER_TEMP/steamcmd/steamcmd.sh" +login anonymous +app_info_update 1 +app_info_print 380870 +quit > "$RUNNER_TEMP/info.txt" || true
-          # "branches" { "<gren>" { "buildid" "…" } }: det første buildid etter linjen med grenens navn.
-          bygg=$(awk -v gren="\"$GREN\"" '$1 == gren { funnet = 1 } funnet && $1 == "\"buildid\"" { gsub(/"/, "", $2); print $2; exit }' "$RUNNER_TEMP/info.txt")
-          if [ -z "$bygg" ]; then
-            echo "::error::Fant ikke byggenummeret for grenen $GREN"
-            tail -n 60 "$RUNNER_TEMP/info.txt"
-            exit 1
-          fi
-          echo "bygg=$bygg" >> "$GITHUB_OUTPUT"
-          echo "Steam-bygg for $GREN: $bygg"
-
-      - id: lager
-        uses: actions/cache/restore@v4
+      - id: spillet
+        uses: ./.github/actions/hent-spillet
         with:
-          path: ${{ runner.temp }}/spillet
-          key: spillet-380870-${{ env.GREN }}-${{ steps.steam.outputs.bygg }}
-
-      - name: Hent spillets jar-filer
-        if: steps.lager.outputs.cache-hit != 'true'
-        run: |
-          beta=""
-          if [ "$GREN" != "public" ]; then beta="-beta $GREN"; fi
-          "$RUNNER_TEMP/steamcmd/steamcmd.sh" +force_install_dir "$RUNNER_TEMP/server" +login anonymous \
-            +app_update 380870 $beta validate +quit
-          mkdir -p "$RUNNER_TEMP/spillet"
-          cp "$RUNNER_TEMP/server/java/"*.jar "$RUNNER_TEMP/spillet/"
-          rm -rf "$RUNNER_TEMP/server"
-
-      - if: steps.lager.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ runner.temp }}/spillet
-          key: spillet-380870-${{ env.GREN }}-${{ steps.steam.outputs.bygg }}
-
-      - name: SHA-256 av spillets jar
-        run: |
-          sha=$(sha256sum "$RUNNER_TEMP/spillet/projectzomboid.jar" | cut -c1-64)
-          echo "projectzomboid.jar ($GREN, Steam-bygg ${{ steps.steam.outputs.bygg }}): $sha"
-          {
-            echo "### Spillet"
-            echo "- Gren: \`$GREN\`, Steam-bygg ${{ steps.steam.outputs.bygg }}"
-            echo "- SHA-256 av \`projectzomboid.jar\`: \`$sha\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          gren: ${{ env.GREN }}
 
       # Samme Java som spillet, så porten laster klassene slik spillet gjør.
       - uses: actions/setup-java@v5
@@ -99,4 +47,4 @@ jobs:
           java-version: '25'
 
       - name: Bygg agenten og kjør porten mot spillet
-        run: SPILLETS_MAPPE="$RUNNER_TEMP/spillet" java/agent/bygg.sh
+        run: SPILLETS_MAPPE="${{ steps.spillet.outputs.mappe }}" java/agent/bygg.sh

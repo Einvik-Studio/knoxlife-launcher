@@ -6,7 +6,7 @@ Java mods the server uses.
 The code is public so you can check exactly what runs on your PC. It is **not** open source: all rights are
 reserved (see [LICENSE](LICENSE)).
 
-> Status: in development. Nothing here is released yet.
+> Status: in development. Nothing here is released yet – see [Releases](#releases) for how it will be.
 
 ![The Knox Life launcher, ready to play](docs/vinduet/klar.png)
 
@@ -58,6 +58,7 @@ files" in Details, or Steam's "Verify integrity of game files", puts back anythi
 | `launcher/kjerne` | The launcher's core, without a window or network: finding the game, the manifest, the version check, the download check, adding and removing the patch, and watching the game |
 | `launcher/knoxctl` | The same steps on the command line, for testing and troubleshooting |
 | `java/agent` | The Java agent (`knoxlife-agent.jar`): starts Mixin with our Java mods before the game's classes load, writes the stamp the launcher waits for, reads the travel ticket, and makes the anti-cheat report the server checks at login |
+| `utgivelse` | The release tools: rebuilding a release yourself (`bygg-pa-nytt.sh`) and making the signing key (`ny-nokkel.mjs`) |
 
 Code comments and names are in Norwegian; everything players see is in English.
 
@@ -144,3 +145,35 @@ method and checked the mod. The build then prints what the file should be; `AVDR
 
 `knoxctl finn` shows where the game is, `knoxctl status` whether the patch is in, and `knoxctl sett-tilbake` puts the
 game back.
+
+## Releases
+
+Every patch is built by GitHub, never on a PC ([`.github/workflows/utgivelse.yml`](.github/workflows/utgivelse.yml)):
+the agent and the Java mods are built against the game's own `projectzomboid.jar` from Steam's dedicated server, the
+tests, the gate and the drift check run, and the release waits. Only when one of the owners approves the run does a
+second job sign the manifest – the signing key exists only in that protected environment, which only `main` can use –
+and publish the release with `manifest.json`, `manifest.sig`, `knoxlife-agent.jar`, `bygget.txt` and
+`SHA256SUMS.txt`. The launcher reads the latest release and checks the signature before it reads a single field.
+
+A new game version starts the build by itself when it appears on Steam, so the patch is usually ready within hours. A
+build for the `unstable` branch is a pre-release, which the launcher never uses.
+
+Each file has an attestation from GitHub saying which commit and which run built it:
+
+```sh
+gh attestation verify knoxlife-agent.jar --repo Einvik-Studio/knoxlife-launcher
+```
+
+### Build it yourself
+
+You can rebuild any release from its commit and compare the bytes. You need git, curl, a JDK (the version in the
+release's `bygget.txt` gives the same bytes) and the game version the patch was made for:
+
+```sh
+utgivelse/bygg-pa-nytt.sh patch-12 "<folder with projectzomboid.jar>"
+```
+
+The script takes the code from the commit in `bygget.txt` (your own changes are not included), checks that your
+`projectzomboid.jar` is the one the patch was built against, builds it with `java/agent/bygg.sh`, and prints whether
+your `knoxlife-agent.jar` is byte for byte the one GitHub published.
+

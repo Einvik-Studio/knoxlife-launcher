@@ -1,0 +1,89 @@
+# Spillets egne jar-filer fra den dedikerte serveren (Steam-app 380870, anonym SteamCMD – den samme projectzomboid.jar
+# spillerne har), mellomlagret på Steams byggenummer. Brukes av «Porten mot spillet» og «Utgivelse».
+#
+# Jar-filene er spillets, ikke våre: de lastes aldri opp, publiseres aldri og legges aldri i repoet. De ligger bare i
+# GitHubs mellomlager for jobbene her.
+name: Hent spillet
+description: Spillets jar-filer, mellomlagret på Steams byggenummer
+inputs:
+  gren:
+    description: Steam-grenen (public eller unstable)
+    default: public
+outputs:
+  mappe:
+    description: Mappen med projectzomboid.jar og de andre jar-filene
+    value: ${{ steps.mappe.outputs.mappe }}
+  bygg:
+    description: Steams byggenummer
+    value: ${{ steps.steam.outputs.bygg }}
+  sha256:
+    description: SHA-256 av projectzomboid.jar
+    value: ${{ steps.mappe.outputs.sha256 }}
+runs:
+  using: composite
+  steps:
+    - id: steam
+      shell: bash
+      env:
+        GREN: ${{ inputs.gren }}
+      run: |
+        case "$GREN" in public|unstable) ;; *) echo "::error::Ukjent gren: $GREN"; exit 1 ;; esac
+        sudo dpkg --add-architecture i386
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq lib32gcc-s1 > /dev/null
+        mkdir -p "$RUNNER_TEMP/steamcmd"
+        curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar -xz -C "$RUNNER_TEMP/steamcmd"
+        # Første kjøring oppdaterer bare SteamCMD selv og avslutter ikke alltid med 0.
+        "$RUNNER_TEMP/steamcmd/steamcmd.sh" +quit > /dev/null || echo "SteamCMD oppdaterte seg selv"
+        "$RUNNER_TEMP/steamcmd/steamcmd.sh" +login anonymous +app_info_update 1 +app_info_print 380870 +quit > "$RUNNER_TEMP/info.txt" \
+          || echo "SteamCMD avsluttet med $? – svaret sjekkes under"
+        # "branches" { "<gren>" { "buildid" "…" } }: det første buildid etter linjen med grenens navn.
+        bygg=$(awk -v gren="\"$GREN\"" '$1 == gren { funnet = 1 } funnet && $1 == "\"buildid\"" { gsub(/"/, "", $2); print $2; exit }' "$RUNNER_TEMP/info.txt")
+        if [ -z "$bygg" ]; then
+          echo "::error::Fant ikke byggenummeret for grenen $GREN"
+          tail -n 60 "$RUNNER_TEMP/info.txt"
+          exit 1
+        fi
+        echo "bygg=$bygg" >> "$GITHUB_OUTPUT"
+        echo "Steam-bygg for $GREN: $bygg"
+
+    - id: lager
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/spillet
+        key: spillet-380870-${{ inputs.gren }}-${{ steps.steam.outputs.bygg }}
+
+    - if: steps.lager.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GREN: ${{ inputs.gren }}
+      run: |
+        beta=""
+        if [ "$GREN" != "public" ]; then beta="-beta $GREN"; fi
+        "$RUNNER_TEMP/steamcmd/steamcmd.sh" +force_install_dir "$RUNNER_TEMP/server" +login anonymous \
+          +app_update 380870 $beta validate +quit
+        mkdir -p "$RUNNER_TEMP/spillet"
+        cp "$RUNNER_TEMP/server/java/"*.jar "$RUNNER_TEMP/spillet/"
+        rm -rf "$RUNNER_TEMP/server"
+
+    - if: steps.lager.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/spillet
+        key: spillet-380870-${{ inputs.gren }}-${{ steps.steam.outputs.bygg }}
+
+    - id: mappe
+      shell: bash
+      env:
+        GREN: ${{ inputs.gren }}
+        BYGG: ${{ steps.steam.outputs.bygg }}
+      run: |
+        sha=$(sha256sum "$RUNNER_TEMP/spillet/projectzomboid.jar" | cut -c1-64)
+        echo "mappe=$RUNNER_TEMP/spillet" >> "$GITHUB_OUTPUT"
+        echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+        echo "projectzomboid.jar ($GREN, Steam-bygg $BYGG): $sha"
+        {
+          echo "### Spillet"
+          echo "- Gren: \`$GREN\`, Steam-bygg $BYGG"
+          echo "- SHA-256 av \`projectzomboid.jar\`: \`$sha\`"
+        } >> "$GITHUB_STEP_SUMMARY"
