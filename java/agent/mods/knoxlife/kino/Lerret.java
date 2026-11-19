@@ -45,11 +45,7 @@ public final class Lerret {
             if (r == null) {
                 return;
             }
-            if (r.nr() != lastet) {
-                lastet = r.nr();
-                SpriteRenderer.instance.drawGeneric(new Opplasting(r.data()));
-            }
-            Texture t = tekstur;
+            Texture t = tekstur(r);
             if (t == null) {
                 return; // teksturen lages i tegnetråden; neste bilde
             }
@@ -72,6 +68,27 @@ public final class Lerret {
         }
     }
 
+    /**
+     * Teksturen med det nyeste bildet: et nytt bilde lastes opp i tegnetråden (lerretet og vinduet deler den), eller
+     * {@code null} før teksturen finnes.
+     */
+    static Texture tekstur(Kino.Ramme r) {
+        if (r.nr() != lastet) {
+            lastet = r.nr();
+            SpriteRenderer.instance.drawGeneric(new Opplasting(r.data()));
+        }
+        return tekstur;
+    }
+
+    static boolean feilet() {
+        return feilet;
+    }
+
+    static void feil(String hva, Throwable e) {
+        feilet = true;
+        KnoxLife.feil(hva, e);
+    }
+
     /** Laster opp bildet i spillets tegnetråd; lager teksturen første gang. */
     static final class Opplasting extends TextureDraw.GenericDrawer {
         private final ByteBuffer data;
@@ -85,7 +102,8 @@ public final class Lerret {
             try {
                 Texture t = tekstur;
                 if (t == null) {
-                    t = new Texture(1024, 512, 0);
+                    // Filmflaten er 640 × 480; spillet gir teksturen 1024 × 512 rundt (to-potens), som bufferen.
+                    t = new Texture(Kino.FILM_BREDDE, Kino.FILM_HOYDE, 0);
                     tekstur = t;
                 }
                 data.position(0);

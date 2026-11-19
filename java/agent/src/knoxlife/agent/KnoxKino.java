@@ -43,6 +43,14 @@ public final class KnoxKino {
         Kino.SPILLET.bilde(lys, fokus);
     }
 
+    /**
+     * Filmen i vinduet «Watch», hvert bilde fra vinduets {@code render()}: flatens absolutte x/y og størrelse i punkter.
+     * 4:3 med sorte felt, alltid klart bilde, tekst midt i når det står en, og sort uten film.
+     */
+    public static void tegnVindu(double x, double y, double b, double h) {
+        Kino.SPILLET.tegnVindu(x, y, b, h);
+    }
+
     /** Volumet 0..1 akkurat nå – kalles hvert sekund. 0 er stille. */
     public static void lyd(double volum) {
         Kino.SPILLET.lyd(volum);

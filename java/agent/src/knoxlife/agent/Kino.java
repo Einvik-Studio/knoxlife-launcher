@@ -22,6 +22,9 @@ public final class Kino {
 
     /** Hvor lenge etter siste tegning lerretet regnes som synlig. */
     static final long SYNLIG_MS = 2000;
+    /** Filmflaten i teksturen (to-potens rundt: 1024 × 512). */
+    public static final int FILM_BREDDE = KinoBilde.FILM_BREDDE;
+    public static final int FILM_HOYDE = KinoBilde.FILM_HOYDE;
     /** Tre buffere på rad: den spillet laster opp, blir ikke skrevet over før to nye bilder er lest. */
     static final int BUFFERE = 3;
     private static final Pattern ID = Pattern.compile("[a-z0-9_-]{1,40}");
@@ -36,6 +39,14 @@ public final class Kino {
         void volum(float volum);
 
         void stopp();
+    }
+
+    /**
+     * Vinduet «Watch» (kino.md, vedtatt 19.11.2026: «Lerretet og et vindu»): tegner i spillets UI-lag. Får rammen
+     * ({@code x, y, b, h}, sort bak) og flaten for filmen i 4:3 inni den, og bildet – eller {@code null}: bare sort.
+     */
+    public interface Vindu {
+        void tegn(Ramme bilde, double x, double y, double b, double h, double[] flate);
     }
 
     record Film(String sha, long bytes) {}
@@ -65,6 +76,7 @@ public final class Kino {
     private long nr;
     private Thread leser;
     private Lyd lyd;
+    private volatile Vindu vindu;
     private long lydHopp = -1;
     private String lydFilm = "";
     private boolean lydPause;
@@ -195,6 +207,38 @@ public final class Kino {
             });
         }
         return null;
+    }
+
+    /**
+     * Filmen i vinduet «Watch»: rammen på skjermen (punkter fra øvre venstre hjørne). Alltid klart bilde (ikke dagslyset),
+     * og samme fokus som lerretet. Virker hvor som helst, så lenge Lua har sagt hvilken film som går ({@link #vis}).
+     */
+    void tegnVindu(double x, double y, double b, double h) {
+        Vindu v = vindu;
+        if (v == null || !(b > 0) || !(h > 0)) {
+            return;
+        }
+        String film = takt.film();
+        boolean noe = !tekst.isEmpty() || !film.isEmpty() && Boolean.TRUE.equals(sjekket.get(film));
+        v.tegn(noe ? tegnes() : null, x, y, b, h, letterbox(x, y, b, h));
+    }
+
+    /** Den største flaten i 4:3 midt i rammen: {@code x, y, b, h}. Resten blir sorte felt. */
+    static double[] letterbox(double x, double y, double b, double h) {
+        if (!(b > 0) || !(h > 0)) {
+            return new double[] {x, y, 0, 0};
+        }
+        double fb = b;
+        double fh = b * FILM_HOYDE / FILM_BREDDE;
+        if (fh > h) {
+            fh = h;
+            fb = h * FILM_BREDDE / FILM_HOYDE;
+        }
+        return new double[] {x + (b - fb) / 2, y + (h - fh) / 2, fb, fh};
+    }
+
+    public void settVindu(Vindu v) {
+        vindu = v;
     }
 
     // ---------- til tegningen ----------

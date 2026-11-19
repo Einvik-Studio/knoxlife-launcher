@@ -1040,4 +1040,49 @@ public final class Prover {
         vent(() -> k.tegnes().nr() > nr, "teksten");
         lik(8353.0, k.lerret()[0]);
     }
+    static List<Double> flate(double x, double y, double b, double h) {
+        return java.util.Arrays.stream(Kino.letterbox(x, y, b, h)).boxed().toList();
+    }
+
+    static void prøveKinoVinduetGir4til3MedSorteFelt() {
+        lik(List.of(0.0, 0.0, 800.0, 600.0), flate(0, 0, 800, 600));
+        lik(List.of(400.0, 0.0, 800.0, 600.0), flate(0, 0, 1600, 600));
+        lik(List.of(240.0, 0.0, 1440.0, 1080.0), flate(0, 0, 1920, 1080));
+        lik(List.of(10.0, 170.0, 400.0, 300.0), flate(10, 20, 400, 600));
+        lik(List.of(5.0, 6.0, 0.0, 0.0), flate(5, 6, 0, 300));
+    }
+
+    static void prøveKinoVinduetTegnerSortTekstOgFilmOgsåLangtFraLerretet() throws Exception {
+        Path fil = kinofil(tom, "nld");
+        Kino k = new Kino(System::currentTimeMillis);
+        k.settMappe(tom);
+        List<String> tegnet = new ArrayList<>();
+        k.settVindu((bilde, x, y, b, h, f) -> tegnet.add((bilde == null ? "sort" : "bilde") + " " + (int) f[0] + ","
+                + (int) f[1] + " " + (int) f[2] + "x" + (int) f[3]));
+        k.tegnVindu(0, 0, 1600, 600);
+        lik(List.of("sort 400,0 800x600"), tegnet);
+        tegnet.clear();
+        k.tegnVindu(0, 0, 0, 600);
+        lik(List.of(), tegnet);
+        // Uten lerret (langt unna): filmen vises likevel når Lua har sagt hvilken som går.
+        k.film("nld", KinoFil.sha256(fil), Files.size(fil));
+        k.har("nld");
+        vent(() -> k.har("nld"), "sjekken");
+        k.vis("nld", 0, true);
+        lik(null, k.lerret());
+        vent(() -> {
+            tegnet.clear();
+            k.tegnVindu(0, 0, 800, 600);
+            return tegnet.get(0).startsWith("bilde");
+        }, "bildet i vinduet");
+        k.vis(null, 0, false);
+        k.tekst("Intermission – 10:00");
+        tegnet.clear();
+        k.tegnVindu(0, 0, 800, 600);
+        lik(List.of("bilde 0,0 800x600"), tegnet);
+        k.tekst("");
+        tegnet.clear();
+        k.tegnVindu(0, 0, 800, 600);
+        lik(List.of("sort 0,0 800x600"), tegnet);
+    }
 }

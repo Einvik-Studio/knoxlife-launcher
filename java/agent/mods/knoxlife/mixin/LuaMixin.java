@@ -4,6 +4,7 @@ import knoxlife.agent.Kino;
 import knoxlife.agent.KnoxKino;
 import knoxlife.agent.KnoxLifeJava;
 import knoxlife.kino.FmodLyd;
+import knoxlife.kino.Vindu;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -28,5 +29,6 @@ public abstract class LuaMixin {
         // spilles ingenting: Lua kaller den bare hos spilleren.
         setExposed(KnoxKino.class);
         Kino.SPILLET.settLyd(new FmodLyd());
+        Kino.SPILLET.settVindu(new Vindu());
     }
 }
