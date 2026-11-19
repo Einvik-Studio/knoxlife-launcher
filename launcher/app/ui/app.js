@@ -370,4 +370,26 @@ $("ytelse").addEventListener("click", async () => {
 });
 invoke("ytelsesmodus_valgt").then(visYtelse).catch(() => visYtelse(false));
 
+// «Download drive-in films»: filmene til kinoen lastes ned i bakgrunnen mens launcheren er åpen.
+function visKino(på) {
+  $("kino").setAttribute("aria-checked", på ? "true" : "false");
+}
+$("kino").addEventListener("click", async () => {
+  const på = $("kino").getAttribute("aria-checked") !== "true";
+  $("kino").disabled = true;
+  try {
+    await invoke("velg_kino", { paa: på });
+    visKino(på);
+    visMelding(
+      på ? "Drive-in films are downloaded in the background while the launcher is open." : "Drive-in films are not downloaded.",
+      { ok: true },
+    );
+  } catch (feil) {
+    visMelding(String(feil), { rapport: true });
+  } finally {
+    $("kino").disabled = false;
+  }
+});
+invoke("kino_valgt").then(visKino).catch(() => visKino(true));
+
 start();

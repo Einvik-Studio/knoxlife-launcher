@@ -6,5 +6,6 @@ zombie.Lua.LuaManager$Exposer#exposeAll()V 4ca306c049f8c345005c18c9eccd83fd638d9
 zombie.gameStates.MainScreenState#update()Lzombie/gameStates/GameStateMachine$StateAction; b4234ca06c81c33f699b7953f0fd4647216458e3
 zombie.gameStates.ServerDisconnectState#enter()V 883b55d1e2751a9635dc247359c2283175f39bef
 zombie.gameStates.ServerDisconnectState#update()Lzombie/gameStates/GameStateMachine$StateAction; 8dbce61568a35f6163cbc32fabb3d54120d22cdc
+zombie.iso.fboRenderChunk.FBORenderCell#performRenderTiles(Lzombie/iso/IsoCell$PerPlayerRender;IJ)V 43692326860e4d039e491bce26699fb6a9178126
 zombie.network.packets.connection.LoginPacket#write(Lzombie/core/network/ByteBufferWriter;)V aa0811eada2797e20c8ba52aa0facd9f7d1e0d6c
 zombie.network.packets.service.AccessDeniedPacket#processClientLoading(Lzombie/core/raknet/UdpConnection;)V d3a4f3f356b22d509ac103bd87fc7d22e60581d3

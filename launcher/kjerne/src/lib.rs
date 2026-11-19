@@ -17,6 +17,7 @@
 //! signerer manifestet.
 
 pub mod feil;
+pub mod kino;
 pub mod ko;
 pub mod manifest;
 pub mod nedlasting;

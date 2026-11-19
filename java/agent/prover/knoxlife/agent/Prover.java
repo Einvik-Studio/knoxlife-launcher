@@ -857,4 +857,232 @@ public final class Prover {
         lik(null, KnoxLifeJava.profilMinutt());
         lik(-1.0, KnoxLifeJava.hopp("OnTick M f.lua:1 # grunn"));
     }
+    // ---------- kinoen (J11) ----------
+
+    static byte[] jpeg(int farge) throws Exception {
+        var b = new java.awt.image.BufferedImage(KinoBilde.FILM_BREDDE, KinoBilde.FILM_HOYDE,
+                java.awt.image.BufferedImage.TYPE_INT_RGB);
+        var g = b.createGraphics();
+        g.setColor(new java.awt.Color(farge));
+        g.fillRect(0, 0, b.getWidth(), b.getHeight());
+        g.dispose();
+        var ut = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(b, "jpg", ut);
+        return ut.toByteArray();
+    }
+
+    static Path kinofil(Path mappe, String id) throws Exception {
+        Path kino = Files.createDirectories(mappe.resolve("kino"));
+        Path fil = kino.resolve(id + ".knf");
+        KinoFil.skriv(fil, id, 640, 480, 24, List.of(jpeg(0xff0000), jpeg(0x0000ff), jpeg(0x00ff00)),
+                "OggS-lyd".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        return fil;
+    }
+
+    static void vent(java.util.function.BooleanSupplier ferdig, String hva) throws Exception {
+        long slutt = System.nanoTime() + 5_000_000_000L;
+        while (!ferdig.getAsBoolean()) {
+            if (System.nanoTime() > slutt) {
+                throw new AssertionError("ventet for lenge: " + hva);
+            }
+            Thread.sleep(10);
+        }
+    }
+
+    static void prøveKinoFilenLesesOgLydsporetSkrivesUt() throws Exception {
+        Path fil = kinofil(tom, "nld");
+        try (KinoFil k = KinoFil.åpne(fil)) {
+            lik(new KinoFil.Hode("nld", 640, 480, 24.0, 3, 8), k.hode());
+            lik(3 / 24.0, k.sekunder());
+            sant(java.util.Arrays.equals(jpeg(0x0000ff), k.bilde(1)), "bilde 1 er det andre");
+            sant(java.util.Arrays.equals(jpeg(0x00ff00), k.bilde(99)), "for langt gir det siste");
+            Path ogg = tom.resolve("nld.ogg");
+            k.lydTil(ogg);
+            lik("OggS-lyd", Files.readString(ogg));
+        }
+        var md = java.security.MessageDigest.getInstance("SHA-256");
+        lik(java.util.HexFormat.of().formatHex(md.digest(Files.readAllBytes(fil))), KinoFil.sha256(fil));
+    }
+
+    static void prøveKinoFilMedFeilAvvises() throws Exception {
+        Path fil = kinofil(tom, "nld");
+        byte[] b = Files.readAllBytes(fil);
+        Path kort = tom.resolve("kort.knf");
+        Files.write(kort, java.util.Arrays.copyOf(b, b.length - 3));
+        Path merke = tom.resolve("merke.knf");
+        byte[] m = b.clone();
+        m[0] = 'X';
+        Files.write(merke, m);
+        for (Path p : List.of(kort, merke)) {
+            try (KinoFil k = KinoFil.åpne(p)) {
+                throw new AssertionError("åpnet " + p.getFileName() + " " + k.hode());
+            } catch (java.io.IOException ventet) {
+                // riktig
+            }
+        }
+        try {
+            KinoFil.tolk("{\"id\":\"x\",\"bredde\":4000,\"hoyde\":480,\"fps\":24,\"bilder\":3,\"lyd\":{\"bytes\":1}}");
+            throw new AssertionError("for bredt bilde ble tatt");
+        } catch (java.io.IOException ventet) {
+            // riktig
+        }
+    }
+
+    static void prøveKinoTaktenHopperBareOverEtHalvtSekund() {
+        KinoTakt t = new KinoTakt();
+        sant(t.vis("nld", 10, true, 1000), "ny film hopper");
+        lik(12.0, t.posisjon(3000));
+        sant(!t.vis("nld", 12.3, true, 3000), "0,3 s avvik går jevnt videre");
+        lik(12.0, t.posisjon(3000));
+        sant(t.vis("nld", 20, true, 3000), "8 s avvik hopper");
+        lik(21.0, t.posisjon(4000));
+        sant(t.vis("nld", 21, false, 4000), "pause er et hopp");
+        lik(21.0, t.posisjon(9000));
+        sant(t.vis(null, 0, false, 9000), "av");
+        lik("", t.film());
+    }
+
+    static void prøveKinoHarBareLovligeFilerMedRiktigSjekksum() throws Exception {
+        Path fil = kinofil(tom, "nld");
+        Kino k = new Kino(System::currentTimeMillis);
+        k.settMappe(tom);
+        lik(false, k.har("nld"));
+        k.film("nld", KinoFil.sha256(fil), Files.size(fil));
+        k.har("nld");
+        vent(() -> k.har("nld"), "sjekken i bakgrunnen");
+        k.film("ukjent", "0".repeat(64), 10);
+        k.har("ukjent");
+        Thread.sleep(200);
+        lik(false, k.har("ukjent"));
+        k.film("nld", "a".repeat(64), Files.size(fil));
+        k.har("nld");
+        Thread.sleep(200);
+        lik(false, k.har("nld"));
+        k.film("FEIL ID", KinoFil.sha256(fil), 10);
+        lik(false, k.har("FEIL ID"));
+    }
+
+    static void prøveKinoLydenStarterFlytterOgStopper() throws Exception {
+        Path fil = kinofil(tom, "nld");
+        var klokke = new java.util.concurrent.atomic.AtomicLong(100_000);
+        Kino k = new Kino(klokke::get);
+        k.settMappe(tom);
+        List<String> kall = new ArrayList<>();
+        k.settLyd(new Kino.Lyd() {
+            public void spill(Path ogg, long ms) { kall.add("spill " + ogg.getFileName() + " " + ms); }
+            public void pause(boolean p) { kall.add("pause " + p); }
+            public void volum(float v) { kall.add("volum " + v); }
+            public void stopp() { kall.add("stopp"); }
+        });
+        k.film("nld", KinoFil.sha256(fil), Files.size(fil));
+        k.har("nld");
+        vent(() -> k.har("nld"), "sjekken");
+        k.vis("nld", 60, true);
+        k.lyd(0.5);
+        vent(() -> k.lydFil("nld") != null, "lydsporet");
+        klokke.addAndGet(2000);
+        k.lyd(0.5);
+        lik(List.of("spill nld.ogg 62000", "volum 0.5"), kall);
+        kall.clear();
+        k.vis("nld", 62.2, true);
+        k.lyd(1);
+        lik(List.of("volum 1.0"), kall);
+        kall.clear();
+        k.vis("nld", 300, true);
+        k.lyd(1);
+        lik(List.of("spill nld.ogg 300000", "volum 1.0"), kall);
+        kall.clear();
+        k.vis("nld", 300, false);
+        k.lyd(1);
+        lik(List.of("spill nld.ogg 300000", "pause true", "volum 1.0"), kall);
+        kall.clear();
+        k.lyd(0);
+        lik(List.of("stopp"), kall);
+        kall.clear();
+        k.vis("ulovlig", 0, true);
+        k.lyd(1);
+        lik(List.of(), kall);
+    }
+
+    static void prøveKinoBildetTekstenOgFokus() throws Exception {
+        var b = KinoBilde.nyBuffer();
+        KinoBilde.jpeg(jpeg(0xff0000), 0, b);
+        sant((b.get(0) & 255) > 230 && (b.get(1) & 255) < 30 && (b.get(3) & 255) == 255, "rødt øverst til venstre");
+        lik(0, KinoBilde.radius(1));
+        lik(KinoBilde.USKARP_HOYST, KinoBilde.radius(0));
+        int[] p = new int[9];
+        p[4] = 0x900000;
+        lik(0x100000, KinoBilde.uskarp(p, 3, 3, 1)[4]);
+        var t = KinoBilde.nyBuffer();
+        KinoBilde.tekst("Intermission – 10:00", t);
+        boolean lys = false;
+        int rad = KinoBilde.FILM_HOYDE / 2 * KinoBilde.BREDDE * 4;
+        for (int x = 0; x < KinoBilde.FILM_BREDDE && !lys; x++) {
+            lys = (t.get(rad + x * 4) & 255) > 150;
+        }
+        sant(lys, "teksten står midt på lerretet");
+    }
+
+    static void prøveKinoLeserBildeneBareNårLerretetTegnes() throws Exception {
+        Path fil = kinofil(tom, "nld");
+        Kino k = new Kino(System::currentTimeMillis);
+        k.settMappe(tom);
+        k.film("nld", KinoFil.sha256(fil), Files.size(fil));
+        lik(false, k.aktiv());
+        k.lerret(8353, 12179, 8359, 12179, 0, 2);
+        k.har("nld");
+        vent(() -> k.har("nld"), "sjekken");
+        k.vis("nld", 0, true);
+        sant(k.aktiv(), "aktiv med film og lerret");
+        vent(() -> k.tegnes() != null, "det første bildet");
+        long nr = k.tegnes().nr();
+        k.tekst("Film not downloaded – open the launcher");
+        vent(() -> k.tegnes().nr() > nr, "teksten");
+        lik(8353.0, k.lerret()[0]);
+    }
+    static List<Double> flate(double x, double y, double b, double h) {
+        return java.util.Arrays.stream(Kino.letterbox(x, y, b, h)).boxed().toList();
+    }
+
+    static void prøveKinoVinduetGir4til3MedSorteFelt() {
+        lik(List.of(0.0, 0.0, 800.0, 600.0), flate(0, 0, 800, 600));
+        lik(List.of(400.0, 0.0, 800.0, 600.0), flate(0, 0, 1600, 600));
+        lik(List.of(240.0, 0.0, 1440.0, 1080.0), flate(0, 0, 1920, 1080));
+        lik(List.of(10.0, 170.0, 400.0, 300.0), flate(10, 20, 400, 600));
+        lik(List.of(5.0, 6.0, 0.0, 0.0), flate(5, 6, 0, 300));
+    }
+
+    static void prøveKinoVinduetTegnerSortTekstOgFilmOgsåLangtFraLerretet() throws Exception {
+        Path fil = kinofil(tom, "nld");
+        Kino k = new Kino(System::currentTimeMillis);
+        k.settMappe(tom);
+        List<String> tegnet = new ArrayList<>();
+        k.settVindu((bilde, x, y, b, h, f) -> tegnet.add((bilde == null ? "sort" : "bilde") + " " + (int) f[0] + ","
+                + (int) f[1] + " " + (int) f[2] + "x" + (int) f[3]));
+        k.tegnVindu(0, 0, 1600, 600);
+        lik(List.of("sort 400,0 800x600"), tegnet);
+        tegnet.clear();
+        k.tegnVindu(0, 0, 0, 600);
+        lik(List.of(), tegnet);
+        // Uten lerret (langt unna): filmen vises likevel når Lua har sagt hvilken som går.
+        k.film("nld", KinoFil.sha256(fil), Files.size(fil));
+        k.har("nld");
+        vent(() -> k.har("nld"), "sjekken");
+        k.vis("nld", 0, true);
+        lik(null, k.lerret());
+        vent(() -> {
+            tegnet.clear();
+            k.tegnVindu(0, 0, 800, 600);
+            return tegnet.get(0).startsWith("bilde");
+        }, "bildet i vinduet");
+        k.vis(null, 0, false);
+        k.tekst("Intermission – 10:00");
+        tegnet.clear();
+        k.tegnVindu(0, 0, 800, 600);
+        lik(List.of("bilde 0,0 800x600"), tegnet);
+        k.tekst("");
+        tegnet.clear();
+        k.tegnVindu(0, 0, 800, 600);
+        lik(List.of("sort 0,0 800x600"), tegnet);
+    }
 }

@@ -2,6 +2,7 @@
 //! ([`manifest::ADRESSE`]), og filene ligger ved siden av det. Alt som hentes, sjekkes i kjernen etterpå – signaturen
 //! før manifestet leses, og hver fil mot SHA-256 i manifestet.
 
+use knoxlife_kjerne::kino::{self, Ønske};
 use knoxlife_kjerne::ko;
 use knoxlife_kjerne::manifest::{self, Fil, Manifest, STØRSTE_FIL};
 use knoxlife_kjerne::okt::Nett;
@@ -62,6 +63,37 @@ impl Nett for Https {
     fn fil(&self, _: &Manifest, fil: &Fil) -> Resultat<Vec<u8>> {
         // Filnavnet er sjekket i manifestet (bare bokstaver, tall, «.», «_» og «-»), så det kan stå rett i adressen.
         self.hent(&format!("{}{}", self.mappe(), fil.navn), fil.størrelse.min(STØRSTE_FIL))
+    }
+}
+
+/// Filmene til kinoen (J11): strømmes rett til filen fra utgivelsene i dette repoet ([`kino::KILDE`]), bare over HTTPS.
+/// Kjernen sjekker størrelsen og SHA-256 etterpå.
+pub struct Filmnett {
+    agent: ureq::Agent,
+}
+
+impl Filmnett {
+    pub fn ny() -> Filmnett {
+        let agent = ureq::Agent::config_builder()
+            .timeout_connect(Some(Duration::from_secs(15)))
+            .timeout_global(Some(Duration::from_secs(3 * 60 * 60)))
+            .https_only(true)
+            .user_agent(concat!("KnoxLifeLauncher/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .into();
+        Filmnett { agent }
+    }
+}
+
+impl kino::Henter for Filmnett {
+    fn hent_til(&self, ønske: &Ønske, ut: &mut dyn std::io::Write) -> Resultat<()> {
+        if !ønske.url.starts_with(kino::KILDE) {
+            return Err(Feil::Nett("not a Knox Life film".into()));
+        }
+        let mut svar = self.agent.get(&ønske.url).call().map_err(|e| Feil::Nett(kort(&e.to_string())))?;
+        let mut leser = svar.body_mut().with_config().limit(ønske.bytes + 1).reader();
+        std::io::copy(&mut leser, ut).map_err(|e| Feil::Nett(kort(&e.to_string())))?;
+        Ok(())
     }
 }
 
