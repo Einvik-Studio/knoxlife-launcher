@@ -12,7 +12,7 @@ use knoxlife_kjerne::manifest::{self, Manifest, Nyhet};
 use knoxlife_kjerne::okt::{self, Maskin, Nett, Oppsett, Steg, Utfall};
 use knoxlife_kjerne::porten::{self, Svar};
 use knoxlife_kjerne::spillet::{self, Plattform, Spill};
-use knoxlife_kjerne::{patch, rapport, start, ytelsesmodus, Feil, Resultat};
+use knoxlife_kjerne::{kino, patch, rapport, start, ytelsesmodus, Feil, Resultat};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -332,6 +332,37 @@ fn velg_ytelsesmodus(paa: bool) -> Result<(), String> {
     ytelsesmodus::velg(&tilstand(), paa).map_err(|e| e.to_string())
 }
 
+/// «Download drive-in films» under «Details»: står det på?
+#[tauri::command]
+fn kino_valgt() -> bool {
+    kino::valgt(&tilstand())
+}
+
+/// Slår nedlastingen av filmene til kinoen av eller på.
+#[tauri::command]
+fn velg_kino(paa: bool) -> Result<(), String> {
+    kino::velg(&tilstand(), paa).map_err(|e| e.to_string())
+}
+
+/// Hvor ofte launcheren ser etter nye filmer i ønskelisten fra modet.
+const KINO_HVERT: Duration = Duration::from_secs(5 * 60);
+
+/// Filmene til kinoen (J11) i bakgrunnen mens launcheren er åpen: det modet har bedt om, lastes ned, og resten slettes.
+fn kino_i_bakgrunnen() {
+    std::thread::spawn(|| loop {
+        if kino::valgt(&tilstand()) {
+            let zomboid = start::zomboid_mappe(&hjem());
+            let ønsker = kino::ønsker(&zomboid);
+            let mappe = kino::mappe(&zomboid);
+            if !ønsker.is_empty() {
+                let _ = kino::rydd(&mappe, &ønsker);
+                let _ = kino::hent(&mappe, &ønsker, &nett::Filmnett::ny());
+            }
+        }
+        std::thread::sleep(KINO_HVERT);
+    });
+}
+
 /// «Copy report»: rapporten legges på utklippstavlen, og spilleren limer den inn selv.
 #[tauri::command]
 fn kopier_rapport(app: AppHandle, launcher: State<'_, Launcher>) -> Result<(), String> {
@@ -364,6 +395,7 @@ fn main() {
             let _ = patch::rydd_etter_forrige(&spill, &tilstand());
         }
     }
+    kino_i_bakgrunnen();
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(vindu) = app.get_webview_window("main") {
@@ -384,6 +416,8 @@ fn main() {
             sett_tilbake,
             ytelsesmodus_valgt,
             velg_ytelsesmodus,
+            kino_valgt,
+            velg_kino,
             kopier_rapport,
             apne_loggmappen,
             serverstatus,
